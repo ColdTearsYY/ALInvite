@@ -142,7 +142,9 @@ public class MenuManager {
         // 根据当前形状创建正确大小的库存
         Map<Integer, String> slotActions = buildSlotActions(config, currentShape);
         int menuSize = currentShape.size() * 9;
-        Inventory inventory = Bukkit.createInventory(new MenuHolder(config.title), menuSize, ConfigManager.colorize(config.title));
+        // 对标题进行占位符解析（支持第三方 PAPI 变量）
+        String resolvedTitle = placeholderResolver.applyPlaceholders(config.title, player);
+        Inventory inventory = Bukkit.createInventory(new MenuHolder(config.title), menuSize, ConfigManager.colorize(resolvedTitle));
         
         // 总是创建新的菜单会话（确保 slotActions 是正确的）
         MenuSession session = new MenuSession(player, menuKey, config, slotActions, menuSize);
@@ -500,19 +502,20 @@ public class MenuManager {
                                     ItemStack item = createButtonItem(player, prevBtn);
                                     ItemMeta meta = item.getItemMeta();
                                     if (meta != null) {
-                                        // 设置页码信息
+                                        // 获取原有的 lore（来自配置，已通过 createButtonItem 解析 PAPI）
+                                        List<String> existingLore = meta.getLore();
                                         List<String> lore = new ArrayList<>();
-                                        lore.add(ConfigManager.colorize("&7当前页: " + (page + 1) + "/" + totalPages));
-                                        lore.add(ConfigManager.colorize("&7查看上一页里程碑"));
-                                        
+                                        lore.add(placeholderResolver.applyPlaceholders("&7当前页: " + (page + 1) + "/" + totalPages, player));
+                                        lore.add(placeholderResolver.applyPlaceholders("&7查看上一页里程碑", player));
+
                                         // 如果是第一页，禁用上一页按钮
                                         if (page == 0) {
-                                            meta.setDisplayName(ConfigManager.colorize("&c上一页"));
+                                            meta.setDisplayName(ConfigManager.colorize(placeholderResolver.applyPlaceholders(prevBtn.name, player)));
                                             lore.clear();
-                                            lore.add(ConfigManager.colorize("&7当前页: 1/" + totalPages));
-                                            lore.add(ConfigManager.colorize("&7已经是第一页"));
+                                            lore.add(placeholderResolver.applyPlaceholders("&7当前页: 1/" + totalPages, player));
+                                            lore.add(placeholderResolver.applyPlaceholders("&7已经是第一页", player));
                                         }
-                                        meta.setLore(lore);
+                                        meta.setLore(lore.stream().map(ConfigManager::colorize).toList());
                                         item.setItemMeta(meta);
                                     }
                                     inventory.setItem(layoutSlot, item);
@@ -526,17 +529,17 @@ public class MenuManager {
                                     if (meta != null) {
                                         // 设置页码信息
                                         List<String> lore = new ArrayList<>();
-                                        lore.add(ConfigManager.colorize("&7当前页: " + (page + 1) + "/" + totalPages));
-                                        lore.add(ConfigManager.colorize("&7查看下一页里程碑"));
-                                        
+                                        lore.add(placeholderResolver.applyPlaceholders("&7当前页: " + (page + 1) + "/" + totalPages, player));
+                                        lore.add(placeholderResolver.applyPlaceholders("&7查看下一页里程碑", player));
+
                                         // 如果是最后一页，禁用下一页按钮
                                         if (endIndex >= milestoneList.size()) {
-                                            meta.setDisplayName(ConfigManager.colorize("&c下一页"));
+                                            meta.setDisplayName(ConfigManager.colorize(placeholderResolver.applyPlaceholders(nextBtn.name, player)));
                                             lore.clear();
-                                            lore.add(ConfigManager.colorize("&7当前页: " + totalPages + "/" + totalPages));
-                                            lore.add(ConfigManager.colorize("&7已经是最后一页"));
+                                            lore.add(placeholderResolver.applyPlaceholders("&7当前页: " + totalPages + "/" + totalPages, player));
+                                            lore.add(placeholderResolver.applyPlaceholders("&7已经是最后一页", player));
                                         }
-                                        meta.setLore(lore);
+                                        meta.setLore(lore.stream().map(ConfigManager::colorize).toList());
                                         item.setItemMeta(meta);
                                     }
                                     inventory.setItem(layoutSlot, item);
@@ -902,17 +905,17 @@ public class MenuManager {
                                 if (meta != null) {
                                     // 设置页码信息
                                     List<String> lore = new ArrayList<>();
-                                    lore.add(ConfigManager.colorize("&7当前页: " + (page + 1) + "/" + totalPages));
-                                    lore.add(ConfigManager.colorize("&7查看上一页礼包"));
-                                    
+                                    lore.add(placeholderResolver.applyPlaceholders("&7当前页: " + (page + 1) + "/" + totalPages, player));
+                                    lore.add(placeholderResolver.applyPlaceholders("&7查看上一页礼包", player));
+
                                     // 如果是第一页，禁用上一页按钮
                                     if (page == 0) {
-                                        meta.setDisplayName(ConfigManager.colorize("&c上一页"));
+                                        meta.setDisplayName(ConfigManager.colorize(placeholderResolver.applyPlaceholders(prevBtn.name, player)));
                                         lore.clear();
-                                        lore.add(ConfigManager.colorize("&7当前页: 1/" + totalPages));
-                                        lore.add(ConfigManager.colorize("&7已经是第一页"));
+                                        lore.add(placeholderResolver.applyPlaceholders("&7当前页: 1/" + totalPages, player));
+                                        lore.add(placeholderResolver.applyPlaceholders("&7已经是第一页", player));
                                     }
-                                    meta.setLore(lore);
+                                    meta.setLore(lore.stream().map(ConfigManager::colorize).toList());
                                     item.setItemMeta(meta);
                                 }
                                 inventory.setItem(layoutSlot, item);
@@ -926,17 +929,17 @@ public class MenuManager {
                                 if (meta != null) {
                                     // 设置页码信息
                                     List<String> lore = new ArrayList<>();
-                                    lore.add(ConfigManager.colorize("&7当前页: " + (page + 1) + "/" + totalPages));
-                                    lore.add(ConfigManager.colorize("&7查看下一页礼包"));
-                                    
+                                    lore.add(placeholderResolver.applyPlaceholders("&7当前页: " + (page + 1) + "/" + totalPages, player));
+                                    lore.add(placeholderResolver.applyPlaceholders("&7查看下一页礼包", player));
+
                                     // 如果是最后一页，禁用下一页按钮
                                     if (endIndex >= giftList.size()) {
-                                        meta.setDisplayName(ConfigManager.colorize("&c下一页"));
+                                        meta.setDisplayName(ConfigManager.colorize(placeholderResolver.applyPlaceholders(nextBtn.name, player)));
                                         lore.clear();
-                                        lore.add(ConfigManager.colorize("&7当前页: " + totalPages + "/" + totalPages));
-                                        lore.add(ConfigManager.colorize("&7已经是最后一页"));
+                                        lore.add(placeholderResolver.applyPlaceholders("&7当前页: " + totalPages + "/" + totalPages, player));
+                                        lore.add(placeholderResolver.applyPlaceholders("&7已经是最后一页", player));
                                     }
-                                    meta.setLore(lore);
+                                    meta.setLore(lore.stream().map(ConfigManager::colorize).toList());
                                     item.setItemMeta(meta);
                                 }
                                 inventory.setItem(layoutSlot, item);
@@ -994,6 +997,8 @@ public class MenuManager {
             ItemMeta meta = item.getItemMeta();
             String name = plugin.getConfigManager().getMenusConfig().getString("shop_menu.buttons.W.name", "&e当前生效礼包: {name}");
             name = name.replace("{name}", gift.name);
+            // 先解析 PAPI 占位符，再颜色化
+            name = placeholderResolver.applyPlaceholders(name, player);
             meta.setDisplayName(ConfigManager.colorize(name));
 
             List<String> lore = plugin.getConfigManager().getMenusConfig().getStringList("shop_menu.buttons.W.lore");
@@ -1001,10 +1006,12 @@ public class MenuManager {
             for (String line : lore) {
                 if (line.contains("{lore_lines}")) {
                     for (String giftLore : gift.lore) {
-                        loreComponents.add(ConfigManager.colorize("&7" + giftLore));
+                        String resolved = placeholderResolver.applyPlaceholders("&7" + giftLore, player);
+                        loreComponents.add(ConfigManager.colorize(resolved));
                     }
                 } else {
-                    loreComponents.add(ConfigManager.colorize(line));
+                    String resolved = placeholderResolver.applyPlaceholders(line, player);
+                    loreComponents.add(ConfigManager.colorize(resolved));
                 }
             }
             meta.setLore(loreComponents);
@@ -1018,9 +1025,13 @@ public class MenuManager {
                 plugin.getConfigManager().getMenusConfig().getString("gift_shop.default_gift_preview.material", "BARRIER")));
             ItemMeta meta = item.getItemMeta();
             String name = plugin.getConfigManager().getMenusConfig().getString("gift_shop.default_gift_preview.name", "&c未购买礼包");
+            name = placeholderResolver.applyPlaceholders(name, player);
             meta.setDisplayName(ConfigManager.colorize(name));
             List<String> lore = plugin.getConfigManager().getMenusConfig().getStringList("gift_shop.default_gift_preview.lore");
-            meta.setLore(lore.stream().map(ConfigManager::colorize).toList());
+            meta.setLore(lore.stream()
+                .map(line -> placeholderResolver.applyPlaceholders(line, player))
+                .map(ConfigManager::colorize)
+                .toList());
             int cmd = plugin.getConfigManager().getMenusConfig().getInt("gift_shop.default_gift_preview.custom-model-data", 0);
             if (cmd > 0) {
                 meta.setCustomModelData(cmd);

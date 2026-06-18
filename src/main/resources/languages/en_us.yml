@@ -67,6 +67,7 @@ errors:
   already_used: "&cYou have already used an invite code"
   veteran_cannot_bind: "&cYou are already a veteran player and cannot bind other veteran players' invite codes"
   no_invite_code: "&cYou have not unlocked the invite code yet"
+  inviter_limit_reached: "&cThe owner of this invite code has reached the maximum invite limit"
 
 
 points_rebate:

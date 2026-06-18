@@ -23,9 +23,14 @@ public class InviteListener implements Listener {
             .getString("invite_code.veteran_permission", "alinvite.veteran");
 
         if (!player.hasPermission(veteranPerm)) {
+            // 没有 veteran 权限 → 走自动老玩家检查
+            if (plugin.getAutoVeteranManager() != null && plugin.getAutoVeteranManager().isEnabled()) {
+                plugin.getAutoVeteranManager().onPlayerJoin(player);
+            }
             return;
         }
 
+        // 已有 veteran 权限 → 正常处理邀请码、里程碑、礼包
         SchedulerUtils.runTaskAsynchronously(plugin, () -> {
             String code = plugin.getDatabaseManager().getInviteCodeByPlayer(player.getUniqueId()).join();
             if (code == null) {

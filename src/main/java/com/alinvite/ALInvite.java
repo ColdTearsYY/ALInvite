@@ -15,6 +15,7 @@ import com.alinvite.manager.MilestoneManager;
 import com.alinvite.manager.GiftManager;
 import com.alinvite.manager.PointsRebateManager;
 import com.alinvite.manager.LeaderboardManager;
+import com.alinvite.manager.AutoVeteranManager;
 import com.alinvite.placeholder.PlaceholderHook;
 import com.alinvite.api.ALInviteAPI;
 import com.alinvite.utils.ColorUtil;
@@ -40,6 +41,7 @@ public class ALInvite extends JavaPlugin {
     private CommandHandler commandHandler;
     private PointsRebateManager pointsRebateManager;
     private LeaderboardManager leaderboardManager;
+    private AutoVeteranManager autoVeteranManager;
     private ThreadPoolManager threadPoolManager;
     private FoliaScheduler foliaScheduler;
 
@@ -153,6 +155,10 @@ public class ALInvite extends JavaPlugin {
         String placeholderStatus = placeholderEnabled ? "&a已连接" : "&c未安装";
         getLogger().info(ColorUtil.translate("&6  &a✓ &fPlaceholderAPI &7| " + placeholderStatus + "&r"));
 
+        boolean autoVeteranEnabled = autoVeteranManager != null && autoVeteranManager.isEnabled();
+        String autoVeteranStatus = autoVeteranEnabled ? "&a已启用" : "&c已禁用";
+        getLogger().info(ColorUtil.translate("&6  &a✓ &f自动老玩家     &7| " + autoVeteranStatus + "&r"));
+
         getLogger().info(ColorUtil.translate("&6 &r"));
         getLogger().info(ColorUtil.translate("&6  &a✔ &fALInvite &7插件已成功启用！&r"));
         getLogger().info(ColorUtil.translate("&6 &r"));
@@ -193,6 +199,7 @@ public class ALInvite extends JavaPlugin {
         menuManager = new MenuManager(this);
         pointsRebateManager = new PointsRebateManager(this);
         leaderboardManager = new LeaderboardManager(this);
+        autoVeteranManager = new AutoVeteranManager(this);
         // 设置 MenuSessionManager 的 plugin 引用用于调试
         MenuSessionManager.getInstance().setPlugin(this);
     }
@@ -255,6 +262,10 @@ public class ALInvite extends JavaPlugin {
             configManager.loadAll();
             initDatabase();
             initManagers();
+            // 重新加载自动老玩家配置
+            if (autoVeteranManager != null) {
+                autoVeteranManager.loadConfig();
+            }
         } catch (Exception e) {
             getLogger().severe("Reload failed: " + e.getMessage());
             e.printStackTrace();
@@ -299,6 +310,10 @@ public class ALInvite extends JavaPlugin {
 
     public LeaderboardManager getLeaderboardManager() {
         return leaderboardManager;
+    }
+
+    public AutoVeteranManager getAutoVeteranManager() {
+        return autoVeteranManager;
     }
 
     public void checkGiftExpiration(org.bukkit.entity.Player player) {

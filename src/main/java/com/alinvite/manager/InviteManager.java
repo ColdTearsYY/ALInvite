@@ -128,21 +128,19 @@ public class InviteManager {
                             return CompletableFuture.completedFuture(new InviteResult(false, InviteResultType.SELF_INVITE));
                         }
                     }
-                    
-                    return plugin.getDatabaseManager().addInviteRecord(inviterUuid, inviteeUuid, inviteeIp, inviteeName)
-                        .thenCompose(v -> plugin.getDatabaseManager().getPlayerData(inviterUuid))
-                        .thenCompose(data -> {
-                            if (data != null) {
-                                int newTotal = data.totalInvites + 1;
-                                return plugin.getDatabaseManager().updateInviteCount(inviterUuid, newTotal)
-                                    .thenAccept(v -> {
-                                        plugin.getCacheManager().invalidateStats(inviterUuid);
-                                        plugin.getMilestoneManager().checkMilestones(inviterUuid, newTotal);
-                                    })
-                                    .thenApply(v -> new InviteResult(true, InviteResultType.SUCCESS, inviterUuid));
+
+                    // 检查邀请人是否达到最大邀请人数上限
+                    int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
+                    if (maxInvites > 0) {
+                        return plugin.getDatabaseManager().getPlayerData(inviterUuid).thenCompose(inviterData -> {
+                            if (inviterData != null && inviterData.totalInvites >= maxInvites) {
+                                return CompletableFuture.completedFuture(new InviteResult(false, InviteResultType.INVITER_LIMIT_REACHED));
                             }
-                            return CompletableFuture.completedFuture(new InviteResult(true, InviteResultType.SUCCESS, inviterUuid));
+                            return doAddInviteRecord(inviterUuid, inviteeUuid, inviteeIp, inviteeName);
                         });
+                    }
+
+                    return doAddInviteRecord(inviterUuid, inviteeUuid, inviteeIp, inviteeName);
                 });
             })
             .exceptionally(ex -> {
@@ -161,6 +159,26 @@ public class InviteManager {
             .findFirst()
             .map(p -> p.getAddress().getAddress().getHostAddress())
             .orElse(null);
+    }
+
+    /**
+     * 添加邀请记录并更新邀请人计数（提取为公共方法，供 processInvite 和 bindInviteCode 复用）
+     */
+    private CompletableFuture<InviteResult> doAddInviteRecord(UUID inviterUuid, UUID inviteeUuid, String inviteeIp, String inviteeName) {
+        return plugin.getDatabaseManager().addInviteRecord(inviterUuid, inviteeUuid, inviteeIp, inviteeName)
+            .thenCompose(v -> plugin.getDatabaseManager().getPlayerData(inviterUuid))
+            .thenCompose(data -> {
+                if (data != null) {
+                    int newTotal = data.totalInvites + 1;
+                    return plugin.getDatabaseManager().updateInviteCount(inviterUuid, newTotal)
+                        .thenAccept(v -> {
+                            plugin.getCacheManager().invalidateStats(inviterUuid);
+                            plugin.getMilestoneManager().checkMilestones(inviterUuid, newTotal);
+                        })
+                        .thenApply(v -> new InviteResult(true, InviteResultType.SUCCESS, inviterUuid));
+                }
+                return CompletableFuture.completedFuture(new InviteResult(true, InviteResultType.SUCCESS, inviterUuid));
+            });
     }
 
     public CompletableFuture<Integer> getTotalInvites(UUID uuid) {
@@ -248,29 +266,19 @@ public class InviteManager {
                         })
                     .thenCompose(result2 -> {
                         if (result2 != null) return CompletableFuture.completedFuture(result2);
-                        
-                        return plugin.getDatabaseManager().updateInviteCode(playerUuid, trimmedCode)
-                            .thenCompose(v -> {
-                                plugin.getCacheManager().invalidateInviteCode(playerUuid);
-                                return plugin.getDatabaseManager().addInviteRecord(inviterUuid, playerUuid, playerIp, playerName);
-                            })
-                            .thenCompose(v -> plugin.getDatabaseManager().getPlayerData(inviterUuid))
-                            .thenCompose(data -> {
-                                if (data != null) {
-                                    int newTotal = data.totalInvites + 1;
-                                    return plugin.getDatabaseManager().updateInviteCount(inviterUuid, newTotal)
-                                        .thenAccept(v -> {
-                                            plugin.getCacheManager().invalidateStats(inviterUuid);
-                                            plugin.getMilestoneManager().checkMilestones(inviterUuid, newTotal);
-                                        })
-                                        .thenApply(v -> new BindResult(true, BindResultType.SUCCESS));
+
+                        // 检查邀请人是否达到最大邀请人数上限
+                        int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
+                        if (maxInvites > 0 && inviterUuid != null) {
+                            return plugin.getDatabaseManager().getPlayerData(inviterUuid).thenCompose(inviterData -> {
+                                if (inviterData != null && inviterData.totalInvites >= maxInvites) {
+                                    return CompletableFuture.completedFuture(new BindResult(false, BindResultType.INVITER_LIMIT_REACHED));
                                 }
-                                return CompletableFuture.completedFuture(new BindResult(true, BindResultType.SUCCESS));
-                            })
-                            .thenApply(result3 -> {
-                                plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
-                                return result3;
+                                return doBindInviteRecord(playerUuid, playerIp, playerName, inviterUuid, trimmedCode, player);
                             });
+                        }
+
+                        return doBindInviteRecord(playerUuid, playerIp, playerName, inviterUuid, trimmedCode, player);
                     });
                 });
             })
@@ -288,6 +296,7 @@ public class InviteManager {
         IP_LIMIT,
         SELF_INVITE,
         VETERAN_CANNOT_BIND,
+        INVITER_LIMIT_REACHED,
         UNKNOWN
     }
 
@@ -307,6 +316,7 @@ public class InviteManager {
         ALREADY_USED,
         IP_LIMIT,
         SELF_INVITE,
+        INVITER_LIMIT_REACHED,
         UNKNOWN
     }
 
@@ -324,6 +334,34 @@ public class InviteManager {
             this.type = type;
             this.inviterUuid = inviterUuid;
         }
+    }
+
+    /**
+     * 执行绑定邀请记录（提取为公共方法）
+     */
+    private CompletableFuture<BindResult> doBindInviteRecord(UUID playerUuid, String playerIp, String playerName, UUID inviterUuid, String trimmedCode, Player player) {
+        return plugin.getDatabaseManager().updateInviteCode(playerUuid, trimmedCode)
+            .thenCompose(v -> {
+                plugin.getCacheManager().invalidateInviteCode(playerUuid);
+                return plugin.getDatabaseManager().addInviteRecord(inviterUuid, playerUuid, playerIp, playerName);
+            })
+            .thenCompose(v -> plugin.getDatabaseManager().getPlayerData(inviterUuid))
+            .thenCompose(data -> {
+                if (data != null) {
+                    int newTotal = data.totalInvites + 1;
+                    return plugin.getDatabaseManager().updateInviteCount(inviterUuid, newTotal)
+                        .thenAccept(v -> {
+                            plugin.getCacheManager().invalidateStats(inviterUuid);
+                            plugin.getMilestoneManager().checkMilestones(inviterUuid, newTotal);
+                        })
+                        .thenApply(v -> new BindResult(true, BindResultType.SUCCESS));
+                }
+                return CompletableFuture.completedFuture(new BindResult(true, BindResultType.SUCCESS));
+            })
+            .thenApply(result3 -> {
+                plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
+                return result3;
+            });
     }
 
     public void startBindCodeInput(Player player) {

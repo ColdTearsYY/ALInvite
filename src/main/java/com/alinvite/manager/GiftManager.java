@@ -248,7 +248,7 @@ public class GiftManager {
         
         plugin.getDatabaseManager().getGiftId(player.getUniqueId()).thenAccept(currentGiftId -> {
             if (gift.id.equals(currentGiftId)) {
-                player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.already_active")
+                player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.already_active", player)
                     .replace("{gift_name}", com.alinvite.config.ConfigManager.colorize(gift.name)));
                 return;
             }
@@ -257,24 +257,24 @@ public class GiftManager {
                 boolean isPurchased = purchasedGifts.contains(gift.id);
                 if (isPurchased) {
                     plugin.getGiftManager().switchGift(player, gift.id).thenAccept(v -> {
-                        player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.switch_success")
+                        player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.switch_success", player)
                             .replace("{gift_name}", com.alinvite.config.ConfigManager.colorize(gift.name)));
                         plugin.getMenuManager().openShopMenu(player);
                     });
                 } else {
                     buyGift(player, gift.id).thenAccept(result -> {
                         if (result.success) {
-                            player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.success")
+                            player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.success", player)
                                 .replace("{gift_name}", com.alinvite.config.ConfigManager.colorize(gift.name)));
                             plugin.getMenuManager().openShopMenu(player);
                         } else {
                             String message = switch (result.type) {
                                 case INSUFFICIENT_MONEY -> plugin.getConfigManager()
-                                    .getMessage("commands.buygift.fail_money").replace("{price}", String.valueOf(gift.priceMoney));
+                                    .getMessage("commands.buygift.fail_money", player).replace("{price}", String.valueOf(gift.priceMoney));
                                 case INSUFFICIENT_POINTS -> plugin.getConfigManager()
-                                    .getMessage("commands.buygift.fail_points").replace("{price}", String.valueOf(gift.pricePoints));
+                                    .getMessage("commands.buygift.fail_points", player).replace("{price}", String.valueOf(gift.pricePoints));
                                 case NOT_FOUND -> "&c礼包不存在！";
-                                case NO_PERMISSION -> plugin.getConfigManager().getMessage("commands.buygift.no_permission");
+                                case NO_PERMISSION -> plugin.getConfigManager().getMessage("commands.buygift.no_permission", player);
                                 default -> "&c购买失败";
                             };
                             player.sendMessage(com.alinvite.config.ConfigManager.colorize(message));

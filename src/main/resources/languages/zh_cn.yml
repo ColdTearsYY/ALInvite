@@ -67,6 +67,7 @@ errors:
   already_used: "&c你已经使用过邀请码"
   veteran_cannot_bind: "&c你已经是老玩家，不能绑定其他老玩家的邀请码"
   no_invite_code: "&c你暂时未解锁邀请码"
+  inviter_limit_reached: "&c该邀请码的主人已达到最大邀请人数限制，无法继续邀请"
 
 
 points_rebate:

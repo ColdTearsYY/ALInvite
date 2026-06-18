@@ -2,6 +2,8 @@ package com.alinvite.commands;
 
 import com.alinvite.ALInvite;
 import com.alinvite.config.ConfigManager;
+import com.alinvite.utils.PapiDetector;
+import com.alinvite.utils.PlaceholderResolver;
 import com.alinvite.utils.SchedulerUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -82,7 +84,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             return CompletableFuture.completedFuture(code);
         }).thenAccept(code -> {
-            String message = plugin.getConfigManager().getMessage("commands.code").replace("{invite_code}", code);
+            String message = plugin.getConfigManager().getMessage("commands.code", player).replace("{invite_code}", code);
             player.sendMessage(message);
         });
     }
@@ -121,6 +123,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit");
                     case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite");
                     case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind");
+                    case INVITER_LIMIT_REACHED -> plugin.getConfigManager().getMessage("errors.inviter_limit_reached");
                     default -> plugin.getConfigManager().getMessage("dialog.fail");
                 };
                 player.sendMessage(reason);
@@ -156,7 +159,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 }
             }
 
-            String message = plugin.getConfigManager().getMessage("commands.stats")
+            String message = plugin.getConfigManager().getMessage("commands.stats", player)
                 .replace("{total}", String.valueOf(total))
                 .replace("{claimed_milestones}", claimed)
                 .replace("{gift_name}", giftName);
@@ -562,6 +565,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage("已为玩家 " + target.getName() + " 检查权限组奖励");
                 });
             }
+            case "papi" -> handlePapiAdmin(sender, args);
             default -> {
                 sender.sendMessage(plugin.getConfigManager().getMessageRaw("commands.admin.help"));
             }
@@ -596,7 +600,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "announce", "checkgroup", "contrib"));
+            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "announce", "checkgroup", "contrib", "papi"));
             return filterByInput(completions, args[1]);
         }
 
@@ -666,6 +670,24 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             );
         }
 
+        // papi 子命令补全
+        if (args.length == 3 && args[1].equalsIgnoreCase("papi")) {
+            return filterByInput(Arrays.asList("list", "scan", "test"), args[2]);
+        }
+
+        if (args.length == 4 && args[1].equalsIgnoreCase("papi")) {
+            String papiAction = args[2].toLowerCase();
+            if ("scan".equals(papiAction)) {
+                return filterByInput(Arrays.asList("main_menu", "veteran_menu", "shop_menu"), args[3]);
+            }
+            if ("test".equals(papiAction)) {
+                return filterByInput(
+                    Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()),
+                    args[3]
+                );
+            }
+        }
+
         if (args.length == 3 && args[0].equalsIgnoreCase("givedj")) {
             return filterByInput(Arrays.asList("100", "500", "1000", "5000"), args[2]);
         }
@@ -725,6 +747,136 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             });
     }
     
+    /**
+     * 处理 /alinvite admin papi 命令 - PlaceholderAPI 检测与管理
+     */
+    private void handlePapiAdmin(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("alinvite.admin")) {
+            sender.sendMessage(plugin.getConfigManager().getMessage("errors.no_permission"));
+            return;
+        }
+
+        if (!PapiDetector.isPapiAvailable()) {
+            sender.sendMessage(ConfigManager.colorize("&cPlaceholderAPI 未安装！此功能需要 PlaceholderAPI 插件。"));
+            return;
+        }
+
+        if (args.length < 3) {
+            sendPapiHelp(sender);
+            return;
+        }
+
+        String action = args[2].toLowerCase();
+
+        switch (action) {
+            case "list" -> {
+                sender.sendMessage(ConfigManager.colorize("&6━━━━━━ &e已注册的 PlaceholderAPI 扩展 &6━━━━━━"));
+                java.util.Map<String, String> expansions = PapiDetector.getExpansionInfo();
+                if (expansions.isEmpty()) {
+                    sender.sendMessage(ConfigManager.colorize("&7  无已注册的扩展"));
+                } else {
+                    int count = 0;
+                    for (java.util.Map.Entry<String, String> entry : expansions.entrySet()) {
+                        String marker = entry.getKey().equals("alinvite") ? "&a[内置]" : "&e[第三方]";
+                        sender.sendMessage(ConfigManager.colorize("  " + marker + " &f%" + entry.getKey() + "_*% &7- " + entry.getValue()));
+                        count++;
+                    }
+                    sender.sendMessage(ConfigManager.colorize("&7共 " + count + " 个扩展"));
+                }
+                sender.sendMessage(ConfigManager.colorize("&6━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+            }
+
+            case "scan" -> {
+                if (args.length >= 4) {
+                    String menuName = args[3].toLowerCase();
+                    // 映射简化名称
+                    String mappedName = switch (menuName) {
+                        case "main", "main_menu" -> "main_menu";
+                        case "veteran", "veteran_menu" -> "veteran_menu";
+                        case "shop", "shop_menu" -> "shop_menu";
+                        default -> menuName;
+                    };
+
+                    var section = plugin.getConfigManager().getMenusConfig().getConfigurationSection(mappedName);
+                    if (section == null) {
+                        sender.sendMessage(ConfigManager.colorize("&c菜单不存在: " + mappedName));
+                        sender.sendMessage(ConfigManager.colorize("&7可用菜单: main_menu, veteran_menu, shop_menu"));
+                        return;
+                    }
+
+                    PapiDetector.ScanResult result = PapiDetector.scanMenu(section, mappedName);
+                    sender.sendMessage(ConfigManager.colorize("&6━━━━━━ &e菜单扫描: " + mappedName + " &6━━━━━━"));
+                    printScanResult(sender, result);
+                } else {
+                    // 扫描所有菜单
+                    sender.sendMessage(ConfigManager.colorize("&6━━━━━━ &e扫描所有菜单 &6━━━━━━"));
+                    var results = PapiDetector.scanAllMenus(plugin.getConfigManager().getMenusConfig());
+                    int totalThirdParty = 0;
+                    for (java.util.Map.Entry<String, PapiDetector.ScanResult> entry : results.entrySet()) {
+                        sender.sendMessage(ConfigManager.colorize("&e▸ " + entry.getKey() + ":"));
+                        printScanResult(sender, entry.getValue());
+                        totalThirdParty += entry.getValue().getThirdPartyCount();
+                    }
+                    if (totalThirdParty == 0) {
+                        sender.sendMessage(ConfigManager.colorize("&7  所有菜单中未发现第三方 PAPI 占位符"));
+                    }
+                    sender.sendMessage(ConfigManager.colorize("&6━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+                }
+            }
+
+            case "test" -> {
+                if (args.length < 5) {
+                    sender.sendMessage(ConfigManager.colorize("&c用法: /alinvite admin papi test <玩家> <占位符>"));
+                    sender.sendMessage(ConfigManager.colorize("&7示例: /alinvite admin papi test Steve %luckperms_prefix%"));
+                    return;
+                }
+
+                String targetPlayer = args[3];
+                String placeholder = args[4];
+                String result = PapiDetector.testPlaceholder(placeholder, targetPlayer);
+                sender.sendMessage(ConfigManager.colorize("&6[PAPI测试] &f占位符: &e" + placeholder));
+                sender.sendMessage(result);
+            }
+
+            default -> sendPapiHelp(sender);
+        }
+    }
+
+    /**
+     * 发送 PAPI 管理命令帮助
+     */
+    private void sendPapiHelp(CommandSender sender) {
+        sender.sendMessage(ConfigManager.colorize("&6━━━━━━ &ePlaceholderAPI 检测工具 &6━━━━━━"));
+        sender.sendMessage(ConfigManager.colorize("&e/alinvite admin papi list &7- 列出所有已注册的PAPI扩展"));
+        sender.sendMessage(ConfigManager.colorize("&e/alinvite admin papi scan [菜单] &7- 扫描菜单中的PAPI占位符"));
+        sender.sendMessage(ConfigManager.colorize("&e/alinvite admin papi test <玩家> <占位符> &7- 测试占位符解析"));
+        sender.sendMessage(ConfigManager.colorize("&7示例:"));
+        sender.sendMessage(ConfigManager.colorize("&7  /alinvite admin papi scan main_menu"));
+        sender.sendMessage(ConfigManager.colorize("&7  /alinvite admin papi test Steve %luckperms_prefix%"));
+        sender.sendMessage(ConfigManager.colorize("&6━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+    }
+
+    /**
+     * 打印扫描结果
+     */
+    private void printScanResult(CommandSender sender, PapiDetector.ScanResult result) {
+        if (!result.alinvitePlaceholders.isEmpty()) {
+            sender.sendMessage(ConfigManager.colorize("  &a[ALInvite内置] &7(" + result.alinvitePlaceholders.size() + "个):"));
+            for (PapiDetector.PlaceholderEntry entry : result.alinvitePlaceholders) {
+                sender.sendMessage(ConfigManager.colorize("    &7- " + entry.placeholder));
+            }
+        }
+        if (!result.thirdPartyPlaceholders.isEmpty()) {
+            sender.sendMessage(ConfigManager.colorize("  &e[第三方] &7(" + result.thirdPartyPlaceholders.size() + "个):"));
+            for (PapiDetector.PlaceholderEntry entry : result.thirdPartyPlaceholders) {
+                sender.sendMessage(ConfigManager.colorize("    &e- " + entry.placeholder + " &7(" + entry.expansionName + ")"));
+            }
+        }
+        if (result.getTotalCount() == 0) {
+            sender.sendMessage(ConfigManager.colorize("  &7未发现任何 PAPI 占位符"));
+        }
+    }
+
     /**
      * 处理玩家查询贡献返点
      */

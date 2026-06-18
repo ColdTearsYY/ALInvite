@@ -23,6 +23,40 @@ invite_code:
   allow_veteran_to_bind: false   # 是否允许老玩家（已有邀请码）绑定其他老玩家的邀请码
   # true: 允许老玩家绑定老玩家（通常不建议开启）
   # false: 禁止老玩家绑定老玩家
+  max_invites: 0                 # 每个玩家最大可邀请人数（0 = 不限制）
+  # 设置为 0 表示无上限，设置大于 0 的数值表示每个玩家最多邀请多少人
+
+# ==================== 自动老玩家 ====================
+# 通过 PlaceholderAPI 检测玩家在线时间，自动授予老玩家 (veteran) 权限
+auto_veteran:
+  enabled: false                  # 是否启用自动老玩家功能
+  # 在线时间 PlaceholderAPI 变量（根据你服务器使用的在线时间插件填写）
+  # 常见示例：
+  #   %statistic_hours_played%    - Minecraft 内置统计（默认，返回小时数）
+  #   %playtime_time_amount%      - PlayTime 插件（返回玩家总在线小时数）
+  #   %ontime_playtime%           - OnTime 插件
+  #   %ajlb_playtime_hours%       - AJLB 插件
+  playtime_placeholder: "%statistic_hours_played%"
+  # 需要达到的在线时长（自动识别单位）
+  # 格式: 数字 + 单位后缀
+  #   30s  = 30秒（测试用）
+  #   5m  = 5分钟
+  #   10h = 10小时
+  #   纯数字 = 小时
+  playtime: "10h"
+  # 数值单位（占位符返回的原始数值单位）：
+  #   hours   - 占位符返回的是小时数（默认）
+  #   minutes - 占位符返回的是分钟数
+  #   seconds - 占位符返回的是秒数
+  #   ticks   - 占位符返回的是游戏刻（20 ticks = 1 秒）
+  value_unit: "hours"
+  # 玩家在线时间检查间隔（秒）
+  check_interval: 300
+  # 授予老玩家权限的命令（{player} 会被替换为玩家名）
+  grant_command: "lp user {player} permission set alinvite.veteran true"
+  # 通知玩家获得老玩家资格的消息（支持颜色代码 &）
+  # 留空则不通知
+  notify_message: "&a恭喜！您的在线时间已达到要求，现在可以生成邀请码邀请新玩家了！"
 
 # ==================== IP 限制 ====================
 ip_restriction:

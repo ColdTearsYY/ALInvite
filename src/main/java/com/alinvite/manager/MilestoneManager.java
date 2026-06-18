@@ -87,7 +87,7 @@ public class MilestoneManager {
                             }
                         } else {
                             if (player != null) {
-                                String msg = plugin.getConfigManager().getMessage("milestone.unlocked")
+                                String msg = plugin.getConfigManager().getMessage("milestone.unlocked", player)
                                     .replace("{name}", milestone.name);
                                 player.sendMessage(msg);
                             }
@@ -179,7 +179,7 @@ public class MilestoneManager {
             }
         }
 
-        String message = plugin.getConfigManager().getMessage("milestone.reached")
+        String message = plugin.getConfigManager().getMessage("milestone.reached", player)
             .replace("{name}", milestone.name);
         player.sendMessage(message);
     }
@@ -233,31 +233,34 @@ public class MilestoneManager {
     }
 
     public void sendAnnouncement(Player player, Milestone milestone, int totalInvites) {
-        String message = plugin.getConfigManager().getConfig()
+        String messageTemplate = plugin.getConfigManager().getConfig()
             .getString("announcements.messages." + totalInvites,
                 plugin.getConfigManager().getConfig()
                     .getString("announcements.messages.default",
                         "&6[邀请系统] &e{player} &a累计邀请人数达到 &6{total} &a人，获得里程碑 &6{milestone_name}&a！"));
 
-        message = message.replace("{player}", player.getName())
+        messageTemplate = messageTemplate.replace("{player}", player.getName())
             .replace("{total}", String.valueOf(totalInvites))
             .replace("{milestone_name}", milestone.name);
-
-        message = ConfigManager.colorize(message);
 
         String mode = plugin.getConfigManager().getConfig().getString("announcements.mode", "BROADCAST");
         switch (mode.toUpperCase()) {
             case "WORLD" -> {
                 for (Player onlinePlayer : player.getWorld().getPlayers()) {
-                    onlinePlayer.sendMessage(message);
+                    // 为每个玩家单独解析 PAPI 占位符
+                    String personalizedMsg = ConfigManager.colorize(messageTemplate, onlinePlayer);
+                    onlinePlayer.sendMessage(personalizedMsg);
                 }
             }
             case "CONSOLE" -> {
-                plugin.getLogger().info(message);
+                String msg = ConfigManager.colorize(messageTemplate);
+                plugin.getLogger().info(msg);
             }
             case "BROADCAST" -> {
                 for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
-                    onlinePlayer.sendMessage(message);
+                    // 为每个玩家单独解析 PAPI 占位符
+                    String personalizedMsg = ConfigManager.colorize(messageTemplate, onlinePlayer);
+                    onlinePlayer.sendMessage(personalizedMsg);
                 }
             }
         }

@@ -325,14 +325,45 @@ public class ConfigManager {
         return colorize(prefix + msg);
     }
 
+    /**
+     * 获取语言文件消息（支持 PlaceholderAPI 变量解析）
+     * @param path 语言文件路径
+     * @param player 目标玩家（用于解析 PAPI 占位符）
+     */
+    public String getMessage(String path, Player player) {
+        String prefix = langConfig.getString("prefix", config.getString("prefix", "&6[ALInvite] &r"));
+        String msg = langConfig.getString(path, "&cMessage not found: " + path);
+        return colorize(prefix + msg, player);
+    }
+
     public String getMessageRaw(String path) {
         return colorize(langConfig.getString(path, "&cMessage not found: " + path));
+    }
+
+    /**
+     * 获取语言文件原始消息（不带前缀，支持 PlaceholderAPI 变量解析）
+     * @param path 语言文件路径
+     * @param player 目标玩家（用于解析 PAPI 占位符）
+     */
+    public String getMessageRaw(String path, Player player) {
+        return colorize(langConfig.getString(path, "&cMessage not found: " + path), player);
     }
 
     public List<String> getMessageList(String path) {
         List<String> list = langConfig.getStringList(path);
         String prefix = langConfig.getString("prefix", config.getString("prefix", "&6[ALInvite] &r"));
         return list.stream().map(s -> colorize(prefix + s)).toList();
+    }
+
+    /**
+     * 获取语言文件消息列表（支持 PlaceholderAPI 变量解析）
+     * @param path 语言文件路径
+     * @param player 目标玩家（用于解析 PAPI 占位符）
+     */
+    public List<String> getMessageList(String path, Player player) {
+        List<String> list = langConfig.getStringList(path);
+        String prefix = langConfig.getString("prefix", config.getString("prefix", "&6[ALInvite] &r"));
+        return list.stream().map(s -> colorize(prefix + s, player)).toList();
     }
 
     public static String colorize(String text) {

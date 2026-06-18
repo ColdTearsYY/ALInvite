@@ -168,7 +168,7 @@ public class MenuListener implements Listener {
                     state.timeoutCallback.accept(player);
                 } else {
                     inputStates.remove(player.getUniqueId());
-                    player.sendMessage(plugin.getConfigManager().getMessage("dialog.timeout"));
+                    player.sendMessage(plugin.getConfigManager().getMessage("dialog.timeout", player));
                 }
                 return;
             }
@@ -177,7 +177,7 @@ public class MenuListener implements Listener {
             String code = event.getMessage().trim();
 
             if (code.equalsIgnoreCase(cancelKey)) {
-                player.sendMessage(plugin.getConfigManager().getMessage("dialog.cancel"));
+                player.sendMessage(plugin.getConfigManager().getMessage("dialog.cancel", player));
                 inputStates.remove(player.getUniqueId());
                 return;
             }
@@ -189,16 +189,16 @@ public class MenuListener implements Listener {
 
             plugin.getInviteManager().bindInviteCode(player, code).thenAccept(result -> {
                 if (result.success) {
-                    player.sendMessage(plugin.getConfigManager().getMessage("dialog.success"));
+                    player.sendMessage(plugin.getConfigManager().getMessage("dialog.success", player));
                 } else {
                     String reason = switch (result.type) {
-                        case NO_PERMISSION -> plugin.getConfigManager().getMessage("errors.no_permission");
-                        case CODE_NOT_FOUND -> plugin.getConfigManager().getMessage("dialog.fail");
-                        case ALREADY_USED -> plugin.getConfigManager().getMessage("errors.already_used");
-                        case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit");
-                        case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite");
-                        case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind");
-                        default -> plugin.getConfigManager().getMessage("dialog.fail");
+                        case NO_PERMISSION -> plugin.getConfigManager().getMessage("errors.no_permission", player);
+                        case CODE_NOT_FOUND -> plugin.getConfigManager().getMessage("dialog.fail", player);
+                        case ALREADY_USED -> plugin.getConfigManager().getMessage("errors.already_used", player);
+                        case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit", player);
+                        case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite", player);
+                        case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind", player);
+                        default -> plugin.getConfigManager().getMessage("dialog.fail", player);
                     };
                     player.sendMessage(reason);
                 }
@@ -277,13 +277,13 @@ public class MenuListener implements Listener {
                 if (total >= required) {
                     if (claimedSet.contains(String.valueOf(required))) {
                         SchedulerUtils.runTask(plugin, () ->
-                            player.sendMessage(plugin.getConfigManager().getMessage("milestone.already_claimed")));
+                            player.sendMessage(plugin.getConfigManager().getMessage("milestone.already_claimed", player)));
                     } else {
                         SchedulerUtils.runTask(plugin, () -> {
                             plugin.getMilestoneManager().giveRewards(player, milestone);
                             plugin.getDatabaseManager().claimMilestone(player.getUniqueId(), String.valueOf(required)).thenAccept(v -> {
                                 SchedulerUtils.runTask(plugin, () -> {
-                                    player.sendMessage(plugin.getConfigManager().getMessage("milestone.claim_success")
+                                    player.sendMessage(plugin.getConfigManager().getMessage("milestone.claim_success", player)
                                         .replace("{name}", milestone.name));
 
                                     if (plugin.getConfigManager().getConfig().getBoolean("announcements.enabled", true)) {
@@ -310,7 +310,7 @@ public class MenuListener implements Listener {
                     }
                 } else {
                     SchedulerUtils.runTask(plugin, () ->
-                        player.sendMessage(plugin.getConfigManager().getMessage("milestone.not_unlocked")
+                        player.sendMessage(plugin.getConfigManager().getMessage("milestone.not_unlocked", player)
                             .replace("{name}", milestone.name)
                             .replace("{remaining}", String.valueOf(required - total))));
                 }
@@ -362,7 +362,7 @@ public class MenuListener implements Listener {
         GiftManager.GiftConfig gift = giftListValues.get(absoluteIndex);
         plugin.getDatabaseManager().getGiftId(player.getUniqueId()).thenAccept(currentGiftId -> {
             if (gift.id.equals(currentGiftId)) {
-                player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.already_active")
+                player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.already_active", player)
                     .replace("{gift_name}", ConfigManager.colorize(gift.name)));
                 return;
             }
@@ -371,24 +371,24 @@ public class MenuListener implements Listener {
                 boolean isPurchased = purchasedGifts.contains(gift.id);
                 if (isPurchased) {
                     plugin.getGiftManager().switchGift(player, gift.id).thenAccept(v -> {
-                        player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.switch_success")
+                        player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.switch_success", player)
                             .replace("{gift_name}", ConfigManager.colorize(gift.name)));
                         plugin.getMenuManager().openVeteranMenu(player);
                     });
                 } else {
                     plugin.getGiftManager().buyGift(player, gift.id).thenAccept(result -> {
                         if (result.success) {
-                            player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.success")
+                            player.sendMessage(plugin.getConfigManager().getMessage("commands.buygift.success", player)
                                 .replace("{gift_name}", ConfigManager.colorize(gift.name)));
                             plugin.getMenuManager().openShopMenu(player);
                         } else {
                             String reason = switch (result.type) {
                                 case INSUFFICIENT_MONEY -> plugin.getConfigManager()
-                                    .getMessage("commands.buygift.fail_money").replace("{price}", String.valueOf(gift.priceMoney));
+                                    .getMessage("commands.buygift.fail_money", player).replace("{price}", String.valueOf(gift.priceMoney));
                                 case INSUFFICIENT_POINTS -> plugin.getConfigManager()
-                                    .getMessage("commands.buygift.fail_points").replace("{price}", String.valueOf(gift.pricePoints));
+                                    .getMessage("commands.buygift.fail_points", player).replace("{price}", String.valueOf(gift.pricePoints));
                                 case NOT_FOUND -> "&c礼包不存在！";
-                                default -> plugin.getConfigManager().getMessage("errors.unknown");
+                                default -> plugin.getConfigManager().getMessage("errors.unknown", player);
                             };
                             player.sendMessage(reason);
                         }
@@ -438,7 +438,7 @@ public class MenuListener implements Listener {
         String usePerm = plugin.getConfigManager().getConfig()
             .getString("invite_code.use_permission", "alinvite.use");
         if (!player.hasPermission(usePerm)) {
-            player.sendMessage(plugin.getConfigManager().getMessage("errors.no_permission"));
+            player.sendMessage(plugin.getConfigManager().getMessage("errors.no_permission", player));
             return;
         }
 
@@ -447,13 +447,13 @@ public class MenuListener implements Listener {
 
         Consumer<Player> timeoutCallback = p -> {
             inputStates.remove(p.getUniqueId());
-            p.sendMessage(plugin.getConfigManager().getMessage("dialog.timeout"));
+            p.sendMessage(plugin.getConfigManager().getMessage("dialog.timeout", p));
         };
 
         inputStates.put(player.getUniqueId(), new InputState("CODE", timeoutTimestamp, timeoutCallback));
         player.closeInventory();
         String cancelKey = plugin.getConfigManager().getConfig().getString("input_dialog.cancel_key", "Q");
-        String prompt = plugin.getConfigManager().getMessage("dialog.prompt").replace("{cancel_key}", cancelKey);
+        String prompt = plugin.getConfigManager().getMessage("dialog.prompt", player).replace("{cancel_key}", cancelKey);
         player.sendMessage(prompt);
     }
 
