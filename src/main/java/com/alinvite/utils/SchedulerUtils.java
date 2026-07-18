@@ -3,25 +3,23 @@ package com.alinvite.utils;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 public class SchedulerUtils {
 
-    private static final boolean IS_FOLIA;
-
-    static {
-        String serverName = Bukkit.getServer().getName();
-        String serverVersion = Bukkit.getVersion();
-        
-        // 检测Folia及其衍生版本（包括Luminol）
-        IS_FOLIA = (serverName != null && (serverName.equalsIgnoreCase("Folia") || 
-                   serverName.toLowerCase().contains("folia") ||
-                   serverName.toLowerCase().contains("luminol"))) ||
-                   (serverVersion != null && serverVersion.toLowerCase().contains("folia"));
-    }
+    private static Boolean IS_FOLIA = null;
 
     public static boolean isFolia() {
+        if (IS_FOLIA == null) {
+            try {
+                Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+                IS_FOLIA = true;
+            } catch (ClassNotFoundException e) {
+                IS_FOLIA = false;
+            }
+        }
         return IS_FOLIA;
     }
 
@@ -63,8 +61,7 @@ public class SchedulerUtils {
 
     public static void runTaskAsynchronously(Plugin plugin, Runnable runnable) {
         if (isFolia()) {
-            // Folia中直接在主线程执行，避免异步问题
-            runTask(plugin, runnable);
+            runTaskAsyncFolia(plugin, runnable);
         } else {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, runnable);
         }
@@ -72,11 +69,7 @@ public class SchedulerUtils {
 
     public static void runTaskTimer(Plugin plugin, Runnable runnable, long delay, long period) {
         if (isFolia()) {
-            // Folia中直接使用延迟任务循环替代定时任务
-            runTaskLater(plugin, () -> {
-                runnable.run();
-                runTaskTimer(plugin, runnable, period, period);
-            }, delay);
+            runTaskTimerFolia(plugin, runnable, delay, period);
         } else {
             Bukkit.getScheduler().runTaskTimer(plugin, runnable, delay, period);
         }
@@ -84,10 +77,9 @@ public class SchedulerUtils {
 
     public static void runTaskLaterAsync(Plugin plugin, Runnable runnable, long delay) {
         if (isFolia()) {
-            // Folia中直接使用同步延迟任务，避免异步问题
-            runTaskLater(plugin, runnable, delay);
+            runTaskLaterFolia(plugin, runnable, delay);
         } else {
-            Bukkit.getScheduler().runTaskLater(plugin, runnable, delay);
+            Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, runnable, delay);
         }
     }
 
@@ -120,20 +112,59 @@ public class SchedulerUtils {
     }
 
     private static void runTaskLaterFolia(Plugin plugin, Runnable runnable, long delay) {
+        if (delay <= 0) {
+            runTaskFolia(plugin, runnable);
+            return;
+        }
         try {
             Object scheduler = Bukkit.class.getMethod("getGlobalRegionScheduler").invoke(null);
             scheduler.getClass().getMethod("runDelayed", Plugin.class, java.util.function.Consumer.class, long.class)
                 .invoke(scheduler, plugin, (java.util.function.Consumer<Object>) task -> runnable.run(), delay);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof UnsupportedOperationException) {
+                plugin.getLogger().warning("Folia调度器不支持该操作，使用异步回退方案");
+                runTaskLaterAsync(plugin, runnable, delay);
+            } else {
+                plugin.getLogger().warning("Folia延迟任务执行失败: " + cause.getClass().getSimpleName() + " - " + cause.getMessage());
+                fallbackTaskLater(plugin, runnable, delay);
+            }
         } catch (Exception e) {
-            plugin.getLogger().warning("Folia延迟任务执行失败: " + e.getClass().getSimpleName() + " - " + e.getMessage());
-            new Thread(() -> {
-                try {
-                    Thread.sleep(delay * 50);
-                    runnable.run();
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                }
-            }).start();
+            plugin.getLogger().warning("Folia延迟任务反射调用失败: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            fallbackTaskLater(plugin, runnable, delay);
         }
+    }
+
+    private static void fallbackTaskLater(Plugin plugin, Runnable runnable, long delay) {
+        new Thread(() -> {
+            try {
+                Thread.sleep(delay * 50);
+                runnable.run();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+
+    private static void runTaskAsyncFolia(Plugin plugin, Runnable runnable) {
+        try {
+            Object scheduler = Bukkit.class.getMethod("getAsyncScheduler").invoke(null);
+            scheduler.getClass().getMethod("runNow", Plugin.class, java.util.function.Consumer.class)
+                .invoke(scheduler, plugin, (java.util.function.Consumer<Object>) task -> runnable.run());
+        } catch (Exception e) {
+            plugin.getLogger().warning("Folia异步任务执行失败: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            new Thread(runnable).start();
+        }
+    }
+
+    private static void runTaskTimerFolia(Plugin plugin, Runnable runnable, long delay, long period) {
+        runTaskLaterFolia(plugin, () -> {
+            try {
+                runnable.run();
+            } catch (Exception e) {
+                plugin.getLogger().warning("Folia定时任务执行异常: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            }
+            runTaskTimerFolia(plugin, runnable, period, period);
+        }, delay);
     }
 }
