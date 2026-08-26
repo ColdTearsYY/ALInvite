@@ -3,9 +3,8 @@ package com.alinvite.manager;
 import com.alinvite.ALInvite;
 import com.alinvite.config.ConfigManager;
 import com.alinvite.utils.SchedulerUtils;
+import com.alinvite.utils.VaultEconomyUtils;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.plugin.RegisteredServiceProvider;
-import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -161,14 +160,7 @@ public class MilestoneManager {
                         Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), command));
                 }
                 case "money" -> {
-                    RegisteredServiceProvider<Economy> rsp = plugin.getServer().getServicesManager()
-                        .getRegistration(Economy.class);
-                    if (rsp != null) {
-                        Economy economy = rsp.getProvider();
-                        if (economy != null) {
-                            economy.depositPlayer(player, Double.parseDouble(reward.value.toString()));
-                        }
-                    }
+                    VaultEconomyUtils.deposit(plugin, player, Double.parseDouble(reward.value.toString()));
                 }
                 case "points" -> {
                     givePoints(player, reward.value);

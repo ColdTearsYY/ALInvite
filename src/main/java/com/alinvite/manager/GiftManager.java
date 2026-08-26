@@ -2,11 +2,11 @@ package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
 import com.alinvite.utils.SchedulerUtils;
+import com.alinvite.utils.VaultEconomyUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.Material;
 
 import java.lang.reflect.Method;
@@ -126,14 +126,7 @@ public class GiftManager {
                                 Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), command));
                         }
                         case "money" -> {
-                            RegisteredServiceProvider<net.milkbowl.vault.economy.Economy> rsp = plugin.getServer().getServicesManager()
-                                .getRegistration(net.milkbowl.vault.economy.Economy.class);
-                            if (rsp != null) {
-                                net.milkbowl.vault.economy.Economy economy = rsp.getProvider();
-                                if (economy != null) {
-                                    economy.depositPlayer(player, Double.parseDouble(reward.value.toString()));
-                                }
-                            }
+                            VaultEconomyUtils.deposit(plugin, player, Double.parseDouble(reward.value.toString()));
                         }
                         case "points" -> {
                             givePoints(player, reward.value);
@@ -323,23 +316,21 @@ public class GiftManager {
                 return new BuyGiftResult(false, BuyGiftResultType.NO_PERMISSION);
             }
 
-            return SchedulerUtils.runTaskSupplied(plugin, () -> {
-                RegisteredServiceProvider<net.milkbowl.vault.economy.Economy> rsp = plugin.getServer().getServicesManager()
-                    .getRegistration(net.milkbowl.vault.economy.Economy.class);
-                net.milkbowl.vault.economy.Economy economy = rsp != null ? rsp.getProvider() : null;
+            return SchedulerUtils.runTaskSupplied(plugin, player, () -> {
+                boolean vaultAvailable = VaultEconomyUtils.isAvailable(plugin);
 
-                if (economy != null && gift.priceMoney > 0) {
-                    if (!economy.has(player, gift.priceMoney)) {
+                if (vaultAvailable && gift.priceMoney > 0) {
+                    if (!VaultEconomyUtils.has(plugin, player, gift.priceMoney)) {
                         return new BuyGiftResult(false, BuyGiftResultType.INSUFFICIENT_MONEY);
                     }
-                    economy.withdrawPlayer(player, gift.priceMoney);
+                    VaultEconomyUtils.withdraw(plugin, player, gift.priceMoney);
                 }
 
                 if (gift.pricePoints > 0) {
                     boolean enoughPoints = hasEnoughPoints(player, gift.pricePoints);
                     if (!enoughPoints) {
-                        if (economy != null && gift.priceMoney > 0) {
-                            economy.depositPlayer(player, gift.priceMoney);
+                        if (vaultAvailable && gift.priceMoney > 0) {
+                            VaultEconomyUtils.deposit(plugin, player, gift.priceMoney);
                         }
                         return new BuyGiftResult(false, BuyGiftResultType.INSUFFICIENT_POINTS);
                     }

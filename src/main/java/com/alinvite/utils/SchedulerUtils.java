@@ -1,6 +1,7 @@
 package com.alinvite.utils;
 
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.InvocationTargetException;
@@ -39,11 +40,43 @@ public class SchedulerUtils {
         return future.join();
     }
 
+    public static <T> T runTaskSupplied(Plugin plugin, Player player, Supplier<T> supplier) {
+        if (!isFolia() && Bukkit.isPrimaryThread()) {
+            return supplier.get();
+        }
+
+        CompletableFuture<T> future = new CompletableFuture<>();
+        runTask(plugin, player, () -> {
+            try {
+                future.complete(supplier.get());
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future.join();
+    }
+
     public static void runTask(Plugin plugin, Runnable runnable) {
         if (isFolia()) {
             runTaskFolia(plugin, runnable);
         } else {
             Bukkit.getScheduler().runTask(plugin, runnable);
+        }
+    }
+
+    public static void runTask(Plugin plugin, Player player, Runnable runnable) {
+        if (!isFolia()) {
+            Bukkit.getScheduler().runTask(plugin, runnable);
+            return;
+        }
+
+        try {
+            Object scheduler = player.getClass().getMethod("getScheduler").invoke(player);
+            scheduler.getClass()
+                .getMethod("execute", Plugin.class, Runnable.class, Runnable.class, long.class)
+                .invoke(scheduler, plugin, runnable, null, 1L);
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to schedule Folia player task: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 
@@ -107,7 +140,6 @@ public class SchedulerUtils {
         } catch (Exception e) {
             plugin.getLogger().warning("Folia任务执行失败: " + e.getMessage());
             // 备用方案：直接在新线程执行
-            new Thread(runnable).start();
         }
     }
 

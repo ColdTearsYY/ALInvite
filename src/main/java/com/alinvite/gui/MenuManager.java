@@ -263,7 +263,7 @@ public class MenuManager {
             }
         }
         
-        SchedulerUtils.runTask(plugin, () -> {
+        SchedulerUtils.runTask(plugin, player, () -> {
             player.openInventory(inventory);
         });
     }
@@ -578,7 +578,7 @@ public class MenuManager {
                         existingSession.setPage(finalPage);
                     }
                     
-                    SchedulerUtils.runTask(plugin, () -> {
+                    SchedulerUtils.runTask(plugin, player, () -> {
                         player.openInventory(inv);
                     });
                 });
@@ -966,7 +966,7 @@ public class MenuManager {
                     existingSession.setPage(finalPage);
                 }
                 
-                SchedulerUtils.runTask(plugin, () -> {
+                SchedulerUtils.runTask(plugin, player, () -> {
                     player.openInventory(inv);
                 });
             });

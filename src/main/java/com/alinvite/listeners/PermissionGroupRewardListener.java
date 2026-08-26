@@ -2,7 +2,7 @@ package com.alinvite.listeners;
 
 import com.alinvite.ALInvite;
 import com.alinvite.utils.SchedulerUtils;
-import net.milkbowl.vault.economy.Economy;
+import com.alinvite.utils.VaultEconomyUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -152,29 +152,19 @@ public class PermissionGroupRewardListener implements Listener {
         Player inviter = Bukkit.getPlayer(inviterUuid);
 
         if (money > 0) {
-            boolean vaultAvailable = false;
-            try {
-                var registration = plugin.getServer().getServicesManager().getRegistration(Economy.class);
-                if (registration != null) {
-                    Economy economy = registration.getProvider();
-                    if (economy != null) {
-                        vaultAvailable = true;
-                        if (inviter != null) {
-                            SchedulerUtils.runTask(plugin, () -> {
-                                economy.depositPlayer(inviter, money);
-                                String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
-                                    .replace("{player}", newPlayerName)
-                                    .replace("{group}", group)
-                                    .replace("{money}", String.valueOf(money));
-                                inviter.sendMessage(msg);
-                            });
-                        } else {
-                            giveOfflineMoney(inviterUuid, money, newPlayerName, group);
-                        }
+            boolean vaultAvailable = VaultEconomyUtils.isAvailable(plugin);
+            if (inviter != null && vaultAvailable) {
+                SchedulerUtils.runTask(plugin, inviter, () -> {
+                    if (VaultEconomyUtils.deposit(plugin, inviter, money)) {
+                        String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
+                            .replace("{player}", newPlayerName)
+                            .replace("{group}", group)
+                            .replace("{money}", String.valueOf(money));
+                        inviter.sendMessage(msg);
                     }
-                }
-            } catch (Exception e) {
-                vaultAvailable = false;
+                });
+            } else if (inviter == null && vaultAvailable) {
+                giveOfflineMoney(inviterUuid, money, newPlayerName, group);
             }
 
             if (!vaultAvailable) {
@@ -185,21 +175,31 @@ public class PermissionGroupRewardListener implements Listener {
                     String cmd = moneyCommand
                         .replace("%player%", targetName)
                         .replace("%amount%", String.valueOf((int) money));
-                    Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd);
                     if (inviter != null) {
-                        String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
-                            .replace("{player}", newPlayerName)
-                            .replace("{group}", group)
-                            .replace("{money}", String.valueOf(money));
-                        inviter.sendMessage(msg);
+                        SchedulerUtils.runTask(plugin, inviter, () -> {
+                            Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd);
+                            String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
+                                .replace("{player}", newPlayerName)
+                                .replace("{group}", group)
+                                .replace("{money}", String.valueOf(money));
+                            inviter.sendMessage(msg);
+                        });
+                    } else {
+                        SchedulerUtils.runTask(plugin, () ->
+                            Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd));
                     }
                 }
             }
         }
 
         if (points > 0) {
-            SchedulerUtils.runTask(plugin, () ->
-                givePointsToPlayer(inviterUuid, points, newPlayerName, group, inviter != null));
+            if (inviter != null) {
+                SchedulerUtils.runTask(plugin, inviter, () ->
+                    givePointsToPlayer(inviterUuid, points, newPlayerName, group, true));
+            } else {
+                SchedulerUtils.runTask(plugin, () ->
+                    givePointsToPlayer(inviterUuid, points, newPlayerName, group, false));
+            }
         }
     }
 

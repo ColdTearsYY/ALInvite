@@ -391,12 +391,6 @@ points_rebate:
       weight: 98
       contribution_mode: true           # 贡献返点模式，只记录返点数量，不发放点券
     
-  # 限制设置
-  limits:
-    min_amount: 10.0            # 最小充值金额（小于此金额的充值不触发返点）
-    max_rebate_per_day: 1000.0  # 单个玩家每日最大返点金额（防止刷返点）
-    
-
     
   # 防重复机制
   anti_duplicate:
