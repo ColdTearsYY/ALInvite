@@ -20,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 public class DatabaseManager {
 
     private final ALInvite plugin;
+    private final Map<UUID, Object> milestoneClaimLocks = new java.util.concurrent.ConcurrentHashMap<>();
     private String tablePrefix;
     private HikariDataSource dataSource;
 
@@ -592,41 +593,40 @@ public class DatabaseManager {
 
     public CompletableFuture<Void> claimMilestone(UUID uuid, String milestoneId) {
         return CompletableFuture.runAsync(() -> {
-            getClaimedMilestones(uuid).thenAccept(claimed -> {
+            Object claimLock = milestoneClaimLocks.computeIfAbsent(uuid, ignored -> new Object());
+            synchronized (claimLock) {
                 Set<String> claimedSet = new HashSet<>();
-                if (claimed != null && !claimed.trim().isEmpty() && !claimed.equals("[]")) {
-                    try {
-                        String[] parts = claimed.replace("[", "").replace("]", "").replace("\"", "").split(",");
-                        for (String part : parts) {
-                            part = part.trim();
-                            if (!part.isEmpty()) {
-                                claimedSet.add(part);
+                String selectSql = "SELECT claimed_milestones FROM " + tablePrefix + "players WHERE uuid = ?";
+                String updateSql = "UPDATE " + tablePrefix + "players SET claimed_milestones = ? WHERE uuid = ?";
+                try (Connection conn = getConnection();
+                     PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+                    selectStmt.setString(1, uuid.toString());
+                    try (ResultSet rs = selectStmt.executeQuery()) {
+                        if (rs.next()) {
+                            String claimed = rs.getString("claimed_milestones");
+                            if (claimed != null && !claimed.trim().isEmpty() && !claimed.equals("[]")) {
+                                String[] parts = claimed.replace("[", "").replace("]", "").replace("\"", "").split(",");
+                                for (String part : parts) {
+                                    String claimedId = part.trim();
+                                    if (!claimedId.isEmpty()) {
+                                        claimedSet.add(claimedId);
+                                    }
+                                }
                             }
                         }
-                    } catch (Exception e) {
-                        plugin.getLogger().warning("解析已领取里程碑失败，重置为空列表: " + claimed);
-                        claimedSet = new HashSet<>();
                     }
-                }
-
-                claimedSet.add(milestoneId);
-
-                String newClaimed = "[\"" + String.join("\",\"", claimedSet) + "\"]";
-
-                String sql = "UPDATE " + tablePrefix + "players SET claimed_milestones = ? WHERE uuid = ?";
-                try (Connection conn = getConnection();
-                     PreparedStatement stmt = conn.prepareStatement(sql)) {
-                    stmt.setString(1, newClaimed);
-                    stmt.setString(2, uuid.toString());
-                    stmt.executeUpdate();
+                    claimedSet.add(milestoneId);
+                    String newClaimed = "[\"" + String.join("\",\"", claimedSet) + "\"]";
+                    try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
+                        updateStmt.setString(1, newClaimed);
+                        updateStmt.setString(2, uuid.toString());
+                        updateStmt.executeUpdate();
+                    }
                 } catch (SQLException e) {
-                    plugin.getLogger().severe("领取里程碑失败: " + e.getMessage());
-                    plugin.getLogger().severe("SQL语句: " + sql);
-                    plugin.getLogger().severe("玩家UUID: " + uuid);
-                    plugin.getLogger().severe("里程碑ID: " + milestoneId);
-                    e.printStackTrace();
+                    plugin.getLogger().severe("Failed to save milestone claim: " + e.getMessage());
+                    throw new RuntimeException("Failed to save milestone claim", e);
                 }
-            });
+            }
         });
     }
 

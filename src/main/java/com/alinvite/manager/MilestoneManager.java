@@ -156,8 +156,18 @@ public class MilestoneManager {
                 case "command" -> {
                     String command = reward.value.toString()
                         .replace("%player%", player.getName());
-                    SchedulerUtils.runTask(plugin, () ->
-                        Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), command));
+                    SchedulerUtils.runTask(plugin, () -> {
+                        try {
+                            boolean success = Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), command);
+                            if (!success) {
+                                plugin.getLogger().warning("Milestone reward command returned false: " + command);
+                            } else if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
+                                plugin.getLogger().info("Milestone reward command succeeded: " + command);
+                            }
+                        } catch (Exception e) {
+                            plugin.getLogger().severe("Milestone reward command failed: " + command + " - " + e.getMessage());
+                        }
+                    });
                 }
                 case "money" -> {
                     VaultEconomyUtils.deposit(plugin, player, Double.parseDouble(reward.value.toString()));

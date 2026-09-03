@@ -477,7 +477,7 @@ public class MenuManager {
                         if (milestoneSlot < inventory.getSize()) {
                             inventory.setItem(milestoneSlot, item);
                         }
-                        localSlotActions.put(milestoneSlot, "CLAIM_MILESTONE");
+                        localSlotActions.put(milestoneSlot, "CLAIM_MILESTONE:" + required);
                     }
 
                     int layoutSlot = 0;

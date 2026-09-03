@@ -30,6 +30,7 @@ public class MenuListener implements Listener {
 
     private final ALInvite plugin;
     private final ConcurrentHashMap<UUID, InputState> inputStates = new ConcurrentHashMap<>();
+    private final Set<String> milestoneClaimsInProgress = ConcurrentHashMap.newKeySet();
 
     public MenuListener(ALInvite plugin) {
         this.plugin = plugin;
@@ -214,6 +215,15 @@ public class MenuListener implements Listener {
             return;
         }
 
+        if (action.startsWith("CLAIM_MILESTONE:")) {
+            try {
+                handleClaimMilestone(player, Integer.parseInt(action.substring("CLAIM_MILESTONE:".length())));
+            } catch (NumberFormatException e) {
+                plugin.getLogger().warning("Invalid milestone menu action: " + action);
+            }
+            return;
+        }
+
         if (isDebug()) plugin.getLogger().info("[DEBUG] Main menu action: " + action);
 
         switch (action) {
@@ -235,14 +245,14 @@ public class MenuListener implements Listener {
         switch (action) {
             case "OPEN_SHOP" -> plugin.getMenuManager().openShopMenu(player);
             case "CLOSE" -> player.closeInventory();
-            case "CLAIM_MILESTONE" -> handleClaimMilestone(player, slot);
+            case "CLAIM_MILESTONE" -> handleClaimMilestoneByLegacySlot(player, slot);
             case "PREV_PAGE" -> handlePrevPage(player, session, "veteran");
             case "NEXT_PAGE" -> handleNextPage(player, session, "veteran");
             case "OPEN_MAIN" -> plugin.getMenuManager().openMainMenu(player);
         }
     }
 
-    private void handleClaimMilestone(Player player, int slot) {
+    private void handleClaimMilestoneByLegacySlot(Player player, int slot) {
         int milestoneIndex = slot - 10;
         var milestones = plugin.getMilestoneManager().getMilestones();
         if (milestoneIndex < 0 || milestoneIndex >= milestones.size()) {
@@ -252,8 +262,15 @@ public class MenuListener implements Listener {
         var entry = milestones.entrySet().stream().skip(milestoneIndex).findFirst().orElse(null);
         if (entry == null) return;
 
-        int required = entry.getKey();
-        MilestoneManager.Milestone milestone = entry.getValue();
+        handleClaimMilestone(player, entry.getKey());
+    }
+
+    private void handleClaimMilestone(Player player, int required) {
+        MilestoneManager.Milestone milestone = plugin.getMilestoneManager().getMilestone(required);
+        if (milestone == null) {
+            plugin.getLogger().warning("Attempted to claim unknown milestone: " + required);
+            return;
+        }
 
         plugin.getDatabaseManager().getClaimedMilestones(player.getUniqueId()).thenAccept(claimedJson -> {
             plugin.getDatabaseManager().getPlayerData(player.getUniqueId()).thenAccept(data -> {
@@ -279,10 +296,14 @@ public class MenuListener implements Listener {
                         SchedulerUtils.runTask(plugin, () ->
                             player.sendMessage(plugin.getConfigManager().getMessage("milestone.already_claimed", player)));
                     } else {
+                        String claimKey = player.getUniqueId() + ":" + required;
+                        if (!milestoneClaimsInProgress.add(claimKey)) {
+                            return;
+                        }
                         SchedulerUtils.runTask(plugin, () -> {
-                            plugin.getMilestoneManager().giveRewards(player, milestone);
                             plugin.getDatabaseManager().claimMilestone(player.getUniqueId(), String.valueOf(required)).thenAccept(v -> {
                                 SchedulerUtils.runTask(plugin, () -> {
+                                    plugin.getMilestoneManager().giveRewards(player, milestone);
                                     player.sendMessage(plugin.getConfigManager().getMessage("milestone.claim_success", player)
                                         .replace("{name}", milestone.name));
 
@@ -305,6 +326,11 @@ public class MenuListener implements Listener {
                                         plugin.getMenuManager().openVeteranMenu(player);
                                     }, 1L);
                                 });
+                            }).whenComplete((v, throwable) -> {
+                                milestoneClaimsInProgress.remove(claimKey);
+                                if (throwable != null) {
+                                    plugin.getLogger().severe("Failed to save milestone claim: " + throwable.getMessage());
+                                }
                             });
                         });
                     }
