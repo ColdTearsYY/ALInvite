@@ -2,6 +2,7 @@ package com.alinvite.utils;
 
 import com.alinvite.ALInvite;
 import com.alinvite.config.ConfigManager;
+import com.alinvite.gui.render.RenderContext;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -10,6 +11,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * 占位符解析器。
+ *
+ * 性能约定：renderContext(player) 只允许在 IO 线程调用（内部走 CacheManager 缓存，
+ * 未命中才回源数据库）；渲染阶段拿到上下文后只做内存替换，绝不查库。
+ * 旧版同步 applyPlaceholders 保留 API 兼容，内部同样走缓存（未命中回源一次）。
+ */
 public class PlaceholderResolver {
 
     private final ALInvite plugin;
@@ -28,382 +36,161 @@ public class PlaceholderResolver {
         customReplacements.remove(placeholder);
     }
 
+    // ─── 渲染上下文 ───
+
+    /** 仅在 IO 线程调用（AsyncPool / scheduler.runAsync 内部）。 */
+    public RenderContext renderContext(Player player) {
+        RenderContext context = new RenderContext(player);
+        context.add("invite_code", getInviteCodeSync(player.getUniqueId()));
+        context.add("bind_status", getBindStatusSync(player.getUniqueId()));
+        context.add("inviter_name", getInviterNameSync(player.getUniqueId()));
+        context.add("total_invites", getTotalInvitesSync(player.getUniqueId()));
+        context.add("gift_name", getGiftNameSync(player.getUniqueId()));
+        context.add("has_gift", hasActiveGiftSync(player.getUniqueId()));
+        context.add("gift_status", getGiftStatusSync(player.getUniqueId()));
+        context.add("gift_remaining_days", getGiftRemainingDaysSync(player.getUniqueId()));
+        context.add("next_milestone", getNextMilestoneSync(player.getUniqueId()));
+        context.add("total_rebate", getTotalRebateSync(player.getUniqueId()));
+        context.add("contribution", getContributionSync(player.getUniqueId()));
+        context.add("unclaimed_rebate", formatAmount(plugin.getDatabaseManager().getUnclaimedRebateSync(player.getUniqueId())));
+        context.add("rebate_rate", plugin.getPointsRebateManager().getRebateRateDisplay(player));
+        customReplacements.forEach(context::add);
+        return context;
+    }
+
+    private String formatAmount(double amount) {
+        return amount == Math.floor(amount) && !Double.isInfinite(amount)
+            ? String.valueOf((long) amount)
+            : String.format(java.util.Locale.ROOT, "%.2f", amount);
+    }
+
+    public CompletableFuture<RenderContext> renderContextAsync(Player player) {
+        return AsyncPool.supply(() -> renderContext(player));
+    }
+
+    /** 旧 API 兼容：键为 {x} 与 %alinvite_x% 两套写法。 */
     public CompletableFuture<Map<String, String>> resolveAllPlaceholders(Player player) {
-        UUID uuid = player.getUniqueId();
-        Map<String, String> placeholders = new HashMap<>();
-
-        CompletableFuture<Map<String, String>> codeFuture = getInviteCodeAsync(uuid)
-            .thenApply(code -> {
-                placeholders.put("{invite_code}", code);
-                placeholders.put("%alinvite_code%", code);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> bindFuture = getBindStatusAsync(uuid)
-            .thenApply(bind -> {
-                placeholders.put("{bind_status}", bind);
-                placeholders.put("%alinvite_bind_status%", bind);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> inviterFuture = getInviterNameAsync(uuid)
-            .thenApply(name -> {
-                placeholders.put("{inviter_name}", name);
-                placeholders.put("%alinvite_inviter_name%", name);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> totalFuture = getTotalInvitesAsync(uuid)
-            .thenApply(total -> {
-                placeholders.put("{total_invites}", total);
-                placeholders.put("%alinvite_total%", total);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> giftFuture = getGiftNameAsync(uuid)
-            .thenApply(gift -> {
-                placeholders.put("{gift_name}", gift);
-                placeholders.put("%alinvite_gift_name%", gift);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> hasGiftFuture = hasActiveGiftAsync(uuid)
-            .thenApply(has -> {
-                placeholders.put("{has_gift}", has);
-                placeholders.put("%alinvite_has_gift%", has);
-                return placeholders;
-            });
-            
-        CompletableFuture<Map<String, String>> giftStatusFuture = getGiftStatusAsync(uuid)
-            .thenApply(status -> {
-                placeholders.put("{gift_status}", status);
-                placeholders.put("%alinvite_gift_status%", status);
-                return placeholders;
-            });
-            
-        CompletableFuture<Map<String, String>> giftRemainingDaysFuture = getGiftRemainingDaysAsync(uuid)
-            .thenApply(days -> {
-                placeholders.put("{gift_remaining_days}", days);
-                placeholders.put("%alinvite_gift_remaining_days%", days);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> nextMilestoneFuture = getNextMilestoneAsync(uuid)
-            .thenApply(milestone -> {
-                placeholders.put("{next_milestone}", milestone);
-                placeholders.put("%alinvite_next_milestone%", milestone);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> totalRebateFuture = getTotalRebateAsync(uuid)
-            .thenApply(totalRebate -> {
-                placeholders.put("{total_rebate}", totalRebate);
-                placeholders.put("%alinvite_total_rebate%", totalRebate);
-                return placeholders;
-            });
-
-        CompletableFuture<Map<String, String>> contributionFuture = getContributionAsync(uuid)
-            .thenApply(contribution -> {
-                placeholders.put("{contribution}", contribution);
-                placeholders.put("%alinvite_contribution%", contribution);
-                return placeholders;
-            });
-
-        return CompletableFuture.allOf(codeFuture, bindFuture, inviterFuture, totalFuture, giftFuture, hasGiftFuture, giftStatusFuture, giftRemainingDaysFuture, nextMilestoneFuture, totalRebateFuture, contributionFuture)
-            .thenApply(v -> {
-                customReplacements.forEach((key, value) -> placeholders.put(key, value));
-                return placeholders;
-            });
-    }
-
-    public String applyPlaceholders(String text, Player player) {
-        if (text == null || text.isEmpty()) {
-            return text;
-        }
-
-        String result = text;
-        UUID uuid = player.getUniqueId();
-
-        String code = getInviteCodeSync(uuid);
-        result = result.replace("{invite_code}", code)
-                      .replace("%alinvite_code%", code);
-
-        String bind = getBindStatusSync(uuid);
-        result = result.replace("{bind_status}", bind)
-                      .replace("%alinvite_bind_status%", bind);
-
-        String inviter = getInviterNameSync(uuid);
-        result = result.replace("{inviter_name}", inviter)
-                      .replace("%alinvite_inviter_name%", inviter);
-
-        String total = getTotalInvitesSync(uuid);
-        result = result.replace("{total_invites}", total)
-                      .replace("%alinvite_total%", total);
-
-        String gift = getGiftNameSync(uuid);
-        result = result.replace("{gift_name}", gift)
-                      .replace("%alinvite_gift_name%", gift);
-
-        String hasGift = hasActiveGiftSync(uuid);
-        result = result.replace("{has_gift}", hasGift)
-                      .replace("%alinvite_has_gift%", hasGift);
-
-        String giftStatus = getGiftStatusSync(uuid);
-        result = result.replace("{gift_status}", giftStatus)
-                      .replace("%alinvite_gift_status%", giftStatus);
-
-        String giftRemainingDays = getGiftRemainingDaysSync(uuid);
-        result = result.replace("{gift_remaining_days}", giftRemainingDays)
-                      .replace("%alinvite_gift_remaining_days%", giftRemainingDays);
-
-        String nextMilestone = getNextMilestoneSync(uuid);
-        result = result.replace("{next_milestone}", nextMilestone)
-                     .replace("%alinvite_next_milestone%", nextMilestone);
-
-        String totalRebate = getTotalRebateSync(uuid);
-        result = result.replace("{total_rebate}", totalRebate)
-                     .replace("%alinvite_total_rebate%", totalRebate);
-
-        String contribution = getContributionSync(uuid);
-        result = result.replace("{contribution}", contribution)
-                     .replace("%alinvite_contribution%", contribution);
-
-        for (Map.Entry<String, String> entry : customReplacements.entrySet()) {
-            result = result.replace(entry.getKey(), entry.getValue());
-        }
-
-        // 调用 PlaceholderAPI 处理第三方变量
-        if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
-            result = me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, result);
-        }
-
-        return result;
-    }
-
-    public CompletableFuture<String> applyPlaceholdersAsync(String text, Player player) {
-        return resolveAllPlaceholders(player).thenApply(placeholders -> {
-            if (text == null || text.isEmpty()) {
-                return text;
+        return renderContextAsync(player).thenApply(context -> {
+            Map<String, String> placeholders = new HashMap<>();
+            for (Map.Entry<String, String> entry : context.strings().entrySet()) {
+                String key = entry.getKey();
+                placeholders.put("{" + key + "}", entry.getValue());
+                placeholders.put("%alinvite_" + key + "%", entry.getValue());
             }
-            String result = text;
-            for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-                result = result.replace(entry.getKey(), entry.getValue());
-            }
-            return result;
+            placeholders.put("%alinvite_code%", context.strings().get("invite_code"));
+            return placeholders;
         });
     }
 
-    public CompletableFuture<String> getInviteCodeAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getInviteCodeSync(uuid));
-    }
+    // ─── 同步取值（缓存回源，热路径请改用 renderContext） ───
 
     public String getInviteCodeSync(UUID uuid) {
-        String code = plugin.getCacheManager().getInviteCode(uuid);
-        if (code == null) {
-            code = plugin.getDatabaseManager().getInviteCodeByPlayer(uuid).join();
-            if (code != null) {
-                plugin.getCacheManager().setInviteCode(uuid, code);
-            }
+        String code = plugin.getCacheManager().getInviteCode(uuid, plugin.getDatabaseManager()::getInviteCodeByPlayerSync);
+        if (code != null && (code.isEmpty() || "null".equalsIgnoreCase(code))) {
+            code = null;
         }
-        boolean hasPermission = plugin.getServer().getPlayer(uuid) != null &&
-            plugin.getServer().getPlayer(uuid).hasPermission(
-                plugin.getConfigManager().getConfig().getString("invite_code.veteran_permission", "alinvite.veteran"));
+        Player player = plugin.getServer().getPlayer(uuid);
+        boolean hasPermission = player != null && player.hasPermission(
+            plugin.getConfigManager().getConfig().getString("invite_code.veteran_permission", "alinvite.veteran"));
         if (!hasPermission) {
             return "未解锁";
         }
         return code != null ? code : "生成中...";
     }
 
-    public CompletableFuture<String> getBindStatusAsync(UUID uuid) {
-        return plugin.getDatabaseManager().getInviter(uuid)
-            .thenApply(inviterUuid -> inviterUuid != null ? "已绑定" : "未绑定");
-    }
-
     public String getBindStatusSync(UUID uuid) {
-        UUID inviterUuid = plugin.getDatabaseManager().getInviter(uuid).join();
-        return inviterUuid != null ? "已绑定" : "未绑定";
-    }
-
-    public CompletableFuture<String> getInviterNameAsync(UUID uuid) {
-        return plugin.getDatabaseManager().getInviter(uuid)
-            .thenCompose(inviterUuid -> {
-                if (inviterUuid == null) {
-                    return CompletableFuture.completedFuture("无");
-                }
-                return plugin.getDatabaseManager().getPlayerData(inviterUuid)
-                    .thenApply(data -> {
-                        if (data == null) {
-                            return "无";
-                        }
-                        Player onlineInviter = plugin.getServer().getPlayer(inviterUuid);
-                        if (onlineInviter != null && onlineInviter.isOnline()) {
-                            return onlineInviter.getName();
-                        }
-                        return data.inviteCode != null ? data.inviteCode : "未知";
-                    });
-            });
+        UUID inviter = plugin.getCacheManager().getInviter(uuid, plugin.getDatabaseManager()::getInviterSync);
+        return inviter != null ? "已绑定" : "未绑定";
     }
 
     public String getInviterNameSync(UUID uuid) {
-        UUID inviterUuid = plugin.getDatabaseManager().getInviter(uuid).join();
-        if (inviterUuid == null) {
+        UUID inviter = plugin.getCacheManager().getInviter(uuid, plugin.getDatabaseManager()::getInviterSync);
+        if (inviter == null) {
             return "无";
         }
-        var data = plugin.getDatabaseManager().getPlayerData(inviterUuid).join();
+        var data = plugin.getDatabaseManager().getPlayerDataSync(inviter);
         if (data == null) {
             return "无";
         }
-        Player onlineInviter = plugin.getServer().getPlayer(inviterUuid);
+        Player onlineInviter = plugin.getServer().getPlayer(inviter);
         if (onlineInviter != null && onlineInviter.isOnline()) {
             return onlineInviter.getName();
         }
-        return data.inviteCode != null ? data.inviteCode : "未知";
-    }
-
-    public CompletableFuture<String> getTotalInvitesAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getTotalInvitesSync(uuid));
+        return data.inviteCode != null && !data.inviteCode.isEmpty() ? data.inviteCode : "未知";
     }
 
     public String getTotalInvitesSync(UUID uuid) {
-        Integer total = plugin.getCacheManager().getStats(uuid);
-        if (total == null) {
-            var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-            total = data != null ? data.totalInvites : 0;
-            plugin.getCacheManager().setStats(uuid, total);
-        }
-        return String.valueOf(total);
-    }
-
-    public CompletableFuture<String> getGiftNameAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getGiftNameSync(uuid));
+        Integer total = plugin.getCacheManager().getStats(uuid, id -> {
+            var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+            return data != null ? data.totalInvites : 0;
+        });
+        return String.valueOf(total == null ? 0 : total);
     }
 
     public String getGiftNameSync(UUID uuid) {
-        String giftId = plugin.getCacheManager().getGiftId(uuid);
-        if (giftId == null) {
-            giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-            if (giftId != null) {
-                plugin.getCacheManager().setGiftId(uuid, giftId);
-            }
-        }
-
-        if (giftId == null) {
-            boolean requireGift = plugin.getConfigManager().getConfig()
-                .getBoolean("new_player_reward.require_gift", false);
-            if (requireGift) {
-                return "无";
-            }
-            giftId = plugin.getConfigManager().getConfig()
-                .getString("new_player_reward.default_gift_id", "default");
-        }
-
+        String giftId = resolveEffectiveGiftId(uuid);
         var gift = plugin.getGiftManager().getGift(giftId);
         return gift != null ? ConfigManager.colorize(gift.name) : "无";
     }
 
-    public CompletableFuture<String> hasActiveGiftAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> hasActiveGiftSync(uuid));
-    }
-
     public String hasActiveGiftSync(UUID uuid) {
-        String giftId = plugin.getCacheManager().getGiftId(uuid);
-        if (giftId == null) {
-            giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-        }
+        String giftId = plugin.getCacheManager().getGiftId(uuid, plugin.getDatabaseManager()::getGiftIdSync);
         return giftId != null ? "true" : "false";
     }
 
-    public CompletableFuture<String> getGiftStatusAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getGiftStatusSync(uuid));
-    }
-
     public String getGiftStatusSync(UUID uuid) {
-        String giftId = plugin.getCacheManager().getGiftId(uuid);
-        if (giftId == null) {
-            giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-        }
-        
+        String giftId = plugin.getCacheManager().getGiftId(uuid, plugin.getDatabaseManager()::getGiftIdSync);
         if (giftId == null) {
             return "未购买";
         }
-        
-        long purchaseTime = plugin.getDatabaseManager().getGiftPurchaseTime(uuid).join();
+        long purchaseTime = plugin.getCacheManager().getGiftPurchaseTime(uuid,
+                id -> plugin.getDatabaseManager().getGiftPurchaseTimeSync(id));
         if (purchaseTime == 0) {
             return "未购买";
         }
-        
         var gift = plugin.getGiftManager().getGift(giftId);
         if (gift == null) {
             return "未购买";
         }
-        
         if (gift.durationDays == 0) {
             return "已购买";
         }
-        
-        long currentTime = System.currentTimeMillis();
-        long expirationTime = purchaseTime + (gift.durationDays * 24L * 60L * 60L * 1000L);
-        
-        if (currentTime > expirationTime) {
-            return "已过期";
-        } else {
-            return "已购买";
-        }
-    }
-
-    public CompletableFuture<String> getGiftRemainingDaysAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getGiftRemainingDaysSync(uuid));
+        long expirationTime = purchaseTime + gift.durationDays * 24L * 60L * 60L * 1000L;
+        return System.currentTimeMillis() > expirationTime ? "已过期" : "已购买";
     }
 
     public String getGiftRemainingDaysSync(UUID uuid) {
-        String giftId = plugin.getCacheManager().getGiftId(uuid);
-        if (giftId == null) {
-            giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-        }
-        
+        String giftId = plugin.getCacheManager().getGiftId(uuid, plugin.getDatabaseManager()::getGiftIdSync);
         if (giftId == null) {
             return "未购买";
         }
-        
-        long purchaseTime = plugin.getDatabaseManager().getGiftPurchaseTime(uuid).join();
+        long purchaseTime = plugin.getCacheManager().getGiftPurchaseTime(uuid,
+                id -> plugin.getDatabaseManager().getGiftPurchaseTimeSync(id));
         if (purchaseTime == 0) {
             return "未购买";
         }
-        
         var gift = plugin.getGiftManager().getGift(giftId);
         if (gift == null) {
             return "未购买";
         }
-        
         if (gift.durationDays == 0) {
             return "永久";
         }
-        
-        long currentTime = System.currentTimeMillis();
-        long expirationTime = purchaseTime + (gift.durationDays * 24L * 60L * 60L * 1000L);
-        
-        if (currentTime > expirationTime) {
+        long expirationTime = purchaseTime + gift.durationDays * 24L * 60L * 60L * 1000L;
+        long remaining = expirationTime - System.currentTimeMillis();
+        if (remaining <= 0) {
             return "0天";
-        } else {
-            long remainingTime = expirationTime - currentTime;
-            int remainingDays = (int) (remainingTime / (24L * 60L * 60L * 1000L));
-            return remainingDays + "天";
         }
-    }
-
-    public CompletableFuture<String> getNextMilestoneAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getNextMilestoneSync(uuid));
+        return (remaining / (24L * 60L * 60L * 1000L)) + "天";
     }
 
     public String getNextMilestoneSync(UUID uuid) {
-        Map<Integer, com.alinvite.manager.MilestoneManager.Milestone> milestones = plugin.getMilestoneManager().getMilestones();
-        Integer currentTotal = plugin.getCacheManager().getStats(uuid);
-        if (currentTotal == null) {
-            var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-            currentTotal = data != null ? data.totalInvites : 0;
-        }
-
-        for (Map.Entry<Integer, com.alinvite.manager.MilestoneManager.Milestone> entry : milestones.entrySet()) {
+        var milestones = plugin.getMilestoneManager().getMilestones();
+        Integer currentTotal = plugin.getCacheManager().getStats(uuid, id -> {
+            var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+            return data != null ? data.totalInvites : 0;
+        });
+        for (var entry : milestones.entrySet()) {
             if (entry.getKey() > currentTotal) {
                 return String.valueOf(entry.getKey());
             }
@@ -411,19 +198,13 @@ public class PlaceholderResolver {
         return "MAX";
     }
 
-    public CompletableFuture<String> getTotalRebateAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getTotalRebateSync(uuid));
-    }
-
     public String getTotalRebateSync(UUID uuid) {
         try {
-            // 从数据库获取累计返点总额
-            Double totalRebate = plugin.getDatabaseManager().getTotalRebateAmount(uuid).join();
-            // 如果为null或NaN，返回0.00
-            if (totalRebate == null || totalRebate.isNaN()) {
+            double totalRebate = plugin.getCacheManager().getTotalRebate(uuid,
+                    plugin.getDatabaseManager()::getTotalRebateAmountSync);
+            if (Double.isNaN(totalRebate)) {
                 return "0.00";
             }
-            // 格式化显示，保留2位小数
             return String.format("%.2f", totalRebate);
         } catch (Exception e) {
             plugin.getLogger().warning("获取累计返点总额失败: " + e.getMessage());
@@ -431,23 +212,121 @@ public class PlaceholderResolver {
         }
     }
 
-    public CompletableFuture<String> getContributionAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getContributionSync(uuid));
-    }
-
     public String getContributionSync(UUID uuid) {
         try {
-            // 从数据库获取贡献返点金额
-            Double contribution = plugin.getDatabaseManager().getContributionAmount(uuid).join();
-            // 如果为null或NaN，返回0.00
-            if (contribution == null || contribution.isNaN()) {
+            double contribution = plugin.getCacheManager().getContribution(uuid,
+                    plugin.getDatabaseManager()::getContributionAmountSync);
+            if (Double.isNaN(contribution)) {
                 return "0.00";
             }
-            // 格式化显示，保留2位小数
             return String.format("%.2f", contribution);
         } catch (Exception e) {
             plugin.getLogger().warning("获取贡献返点金额失败: " + e.getMessage());
             return "0.00";
+        }
+    }
+
+    private String resolveEffectiveGiftId(UUID uuid) {
+        String giftId = plugin.getCacheManager().getGiftId(uuid, plugin.getDatabaseManager()::getGiftIdSync);
+        if (giftId != null) {
+            return giftId;
+        }
+        boolean requireGift = plugin.getConfigManager().getConfig()
+            .getBoolean("new_player_reward.require_gift", false);
+        if (requireGift) {
+            return null;
+        }
+        return plugin.getConfigManager().getConfig()
+            .getString("new_player_reward.default_gift_id", "default");
+    }
+
+    // ─── 旧 API 兼容 ───
+
+    public String applyPlaceholders(String text, Player player) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        String result = text;
+        for (Map.Entry<String, String> entry : renderContext(player).strings().entrySet()) {
+            result = result.replace("%" + entry.getKey() + "%", entry.getValue())
+                    .replace("{" + entry.getKey() + "}", entry.getValue())
+                    .replace("%alinvite_" + entry.getKey() + "%", entry.getValue());
+        }
+        for (Map.Entry<String, String> entry : customReplacements.entrySet()) {
+            result = result.replace(entry.getKey(), entry.getValue());
+        }
+        return MenuTextPapi.apply(result, player);
+    }
+
+    public CompletableFuture<String> applyPlaceholdersAsync(String text, Player player) {
+        return renderContextAsync(player).thenApply(context -> {
+            if (text == null || text.isEmpty()) {
+                return text;
+            }
+            String result = text;
+            for (Map.Entry<String, String> entry : context.strings().entrySet()) {
+                result = result.replace("%" + entry.getKey() + "%", entry.getValue())
+                        .replace("{" + entry.getKey() + "}", entry.getValue())
+                        .replace("%alinvite_" + entry.getKey() + "%", entry.getValue());
+            }
+            return MenuTextPapi.apply(result, player);
+        });
+    }
+
+    public CompletableFuture<String> getInviteCodeAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getInviteCodeSync(uuid));
+    }
+
+    public CompletableFuture<String> getBindStatusAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getBindStatusSync(uuid));
+    }
+
+    public CompletableFuture<String> getInviterNameAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getInviterNameSync(uuid));
+    }
+
+    public CompletableFuture<String> getTotalInvitesAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getTotalInvitesSync(uuid));
+    }
+
+    public CompletableFuture<String> getGiftNameAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getGiftNameSync(uuid));
+    }
+
+    public CompletableFuture<String> hasActiveGiftAsync(UUID uuid) {
+        return AsyncPool.supply(() -> hasActiveGiftSync(uuid));
+    }
+
+    public CompletableFuture<String> getGiftStatusAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getGiftStatusSync(uuid));
+    }
+
+    public CompletableFuture<String> getGiftRemainingDaysAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getGiftRemainingDaysSync(uuid));
+    }
+
+    public CompletableFuture<String> getNextMilestoneAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getNextMilestoneSync(uuid));
+    }
+
+    public CompletableFuture<String> getTotalRebateAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getTotalRebateSync(uuid));
+    }
+
+    public CompletableFuture<String> getContributionAsync(UUID uuid) {
+        return AsyncPool.supply(() -> getContributionSync(uuid));
+    }
+
+    /** 独立小类避免 gui.render 包反向依赖。 */
+    private static final class MenuTextPapi {
+        static String apply(String text, Player player) {
+            if (text == null || text.isEmpty() || player == null) {
+                return text;
+            }
+            if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+                return me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, text);
+            }
+            return text;
         }
     }
 }

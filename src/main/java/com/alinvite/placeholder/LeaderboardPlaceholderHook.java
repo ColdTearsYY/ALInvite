@@ -124,7 +124,7 @@ public class LeaderboardPlaceholderHook extends PlaceholderExpansion {
      */
     private String getPlayerValue(UUID uuid, String valueType) {
         try {
-            DatabaseManager.PlayerData data = plugin.getDatabaseManager().getPlayerData(uuid).join();
+            DatabaseManager.PlayerData data = plugin.getDatabaseManager().getPlayerDataSync(uuid);
             if (data == null) {
                 return "0";
             }

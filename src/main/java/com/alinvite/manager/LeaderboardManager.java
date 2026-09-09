@@ -2,7 +2,7 @@ package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
 import com.alinvite.database.DatabaseManager;
-import com.alinvite.utils.SchedulerUtils;
+import com.alinvite.utils.AsyncPool;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -15,7 +15,8 @@ public class LeaderboardManager {
 
     private final ALInvite plugin;
     private final DatabaseManager databaseManager;
-    private boolean isShutdown = false;  // 新增：关闭标志
+    private boolean isShutdown = false;
+    private int updateTaskId = -1;
     
     // 排行榜缓存
     private final Map<LeaderboardType, List<LeaderboardEntry>> leaderboardCache = new HashMap<>();
@@ -93,9 +94,9 @@ public class LeaderboardManager {
         int updateInterval = plugin.getConfigManager().getConfig().getInt("leaderboard.update_interval", 3600);
         // 转换为tick（20 tick = 1秒）
         long intervalTicks = updateInterval * 20L;
-        
-        // 启动定时更新任务
-        SchedulerUtils.runTaskTimer(plugin, this::updateAllLeaderboards, 0, intervalTicks);
+
+        // 启动定时更新任务（句柄登记，shutdown 时取消，杜绝 reload 后旧定时器泄漏）
+        updateTaskId = plugin.getScheduler().runGlobalTimer(this::updateAllLeaderboards, 20L, Math.max(20L, intervalTicks));
     }
     
     // 更新所有排行榜
@@ -107,7 +108,7 @@ public class LeaderboardManager {
     
     // 更新指定排行榜
     public void updateLeaderboard(LeaderboardType type) {
-        CompletableFuture.runAsync(() -> {
+        AsyncPool.run(() -> {
             // 检查插件是否已禁用或已关闭
             if (isShutdown || !plugin.isEnabled()) {
                 return;
@@ -146,10 +147,14 @@ public class LeaderboardManager {
     }
     
     /**
-     * 关闭排行榜管理器，停止所有定时任务
+     * 关闭排行榜管理器：取消定时任务并停止异步更新
      */
     public void shutdown() {
         isShutdown = true;
+        if (updateTaskId != -1) {
+            plugin.getScheduler().cancel(updateTaskId);
+            updateTaskId = -1;
+        }
         plugin.getLogger().info("排行榜管理器已关闭");
     }
     

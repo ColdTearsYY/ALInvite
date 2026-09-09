@@ -2,514 +2,412 @@ package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
 import com.alinvite.database.DatabaseManager;
+import com.alinvite.utils.AsyncPool;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 点券充值返点管理器
- * 负责处理玩家点券充值、计算返点比例、发放返点奖励等功能
- * 包含完善的防重复机制和跨服同步支持
+ * 点券充值返点管理器。
+ * 全链 CompletableFuture（IO 线程池），命令发放经统一调度器切实体/全局线程后回调，
+ * 不再使用 join/get 反向等待，杜绝 commonPool 阻塞主线程的结构。
  */
 public class PointsRebateManager {
+
     private final ALInvite plugin;
     private final DatabaseManager database;
-    
-    /**
-     * 构造函数
-     * @param plugin 主插件实例
-     */
+
+    /** 缓存的返点权重表（reload 时失效重建）。 */
+    private volatile List<String> sortedGroups;
+
     public PointsRebateManager(ALInvite plugin) {
         this.plugin = plugin;
         this.database = plugin.getDatabaseManager();
     }
-    
+
     /**
-     * 处理点券充值返点（核心方法）
-     * 完整的充值返点流程：参数验证 → 防重复检查 → 点券发放 → 返点处理
-     * 
-     * @param operator 操作者名称（执行命令的玩家或控制台）
-     * @param targetPlayer 目标玩家名称（接收点券的玩家）
-     * @param amount 充值点券数量
-     * @param skipRebate 是否跳过返点处理（用于测试或特殊情况）
-     * @return CompletableFuture<Boolean> 处理结果，true表示成功
+     * 处理充值返点：参数验证 → 防重复检查 → 点券发放 → 返点处理。
+     *
+     * @return 处理结果，true 表示成功
      */
     public CompletableFuture<Boolean> processRecharge(String operator, String targetPlayer, double amount, boolean skipRebate) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                // 1. 参数验证 - 检查玩家存在性和金额合理性
-                if (!validateParameters(targetPlayer, amount)) {
-                    return false;
-                }
-                
-                // 2. 防重复检查 - 防止跨服重复充值和时间窗口内重复操作
-                if (!checkAntiDuplicate(targetPlayer, amount)) {
-                    plugin.getLogger().warning("防重复检查失败，可能是重复交易: " + targetPlayer);
-                    return false;
-                }
-                
-                // 3. 执行点券发放 - 调用实际的点券插件命令
-                if (!executePointsCommand(targetPlayer, amount)) {
-                    return false;
-                }
-                
-                // 4. 处理返点 - 计算返点比例并发放给邀请人（如果不跳过）
-                if (!skipRebate) {
-                    return processRebate(operator, targetPlayer, amount);
-                }
-                
-                return true;
-                
-            } catch (Exception e) {
-                plugin.getLogger().severe("处理充值返点失败: " + e.getMessage());
-                return false;
-            }
-        });
+        // 每次充值事件生成唯一流水键；第三方如有自身订单号请使用带 transactionKey 的重载
+        return processRecharge(operator, targetPlayer, amount, skipRebate,
+            "evt_" + UUID.randomUUID());
     }
-    
+
     /**
-     * 参数验证
+     * 带流水键的充值处理：流水键写入 points_rebate 表（唯一键）占用处理权，
+     * 跨服/重复推送同一事件只会发放一次返利。
      */
-    private boolean validateParameters(String playerName, double amount) {
-        // 检查玩家是否存在
+    public CompletableFuture<Boolean> processRecharge(String operator, String targetPlayer, double amount, boolean skipRebate, String transactionKey) {
+        return validateParameters(targetPlayer, amount)
+            .thenCompose(valid -> {
+                if (!valid) {
+                    return CompletableFuture.completedFuture(false);
+                }
+                return checkAntiDuplicate(targetPlayer, amount);
+            })
+            .thenCompose(ok -> {
+                if (!ok) {
+                    plugin.getLogger().warning("防重复检查失败，可能是重复交易: " + targetPlayer);
+                    return CompletableFuture.completedFuture(false);
+                }
+                return executePointsCommand(targetPlayer, amount);
+            })
+            .thenCompose(given -> {
+                if (!given) {
+                    return CompletableFuture.completedFuture(false);
+                }
+                if (skipRebate) {
+                    return CompletableFuture.completedFuture(true);
+                }
+                return processRebate(targetPlayer, amount, transactionKey);
+            })
+            .exceptionally(throwable -> {
+                plugin.getLogger().severe("处理充值返点失败: " + throwable.getMessage());
+                return false;
+            });
+    }
+
+    private CompletableFuture<Boolean> validateParameters(String playerName, double amount) {
         Player target = Bukkit.getPlayer(playerName);
         if (target == null) {
             plugin.getLogger().warning("玩家不存在: " + playerName);
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
-        
-        // 检查金额范围
         double minAmount = plugin.getConfigManager().getConfig()
             .getDouble("points_rebate.limits.min_amount", 10.0);
-        
         if (amount < minAmount) {
             plugin.getLogger().warning("充值金额过小: " + amount);
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
-        
-        return true;
+        return CompletableFuture.completedFuture(true);
     }
-    
+
     /**
-     * 防重复检查 - 跨服防重复，防止同一笔充值在不同服务器上重复发放返点
-     * 使用玩家UUID和充值金额生成唯一标识，检查数据库中是否已存在相同交易
-     * 默认启用跨服防重复功能，无需配置
+     * 防重复检查（跨服）。
+     * TODO（行为变更待确认）：写入路径（addPointsRebateRecord/markProcessed）当前无调用方，
+     * 检查恒不命中；且 key=uuid+金额，启用后同日同金额两笔会被误判。
+     * 激活前需补全写入并改用订单号/时间窗 key。
      */
-    private boolean checkAntiDuplicate(String playerName, double amount) {
+    private CompletableFuture<Boolean> checkAntiDuplicate(String playerName, double amount) {
         UUID playerUuid = getPlayerUuid(playerName);
         if (playerUuid == null) {
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
-        
-        // 检查是否启用防重复功能
         boolean antiDuplicateEnabled = plugin.getConfigManager().getConfig()
             .getBoolean("points_rebate.anti_duplicate.enabled", true);
-        
         if (!antiDuplicateEnabled) {
-            return true; // 防重复功能已禁用
+            return CompletableFuture.completedFuture(true);
         }
-        
-        // 使用全局交易标识检查跨服重复
         String transactionKey = generateTransactionKey(playerUuid, amount);
-        boolean isDuplicate = database.checkCrossServerDuplicate(transactionKey).join();
-        
-        if (isDuplicate) {
-            plugin.getLogger().warning("跨服防重复：检测到重复充值，玩家=" + playerName + ", 金额=" + amount);
-            return false;
-        }
-        
-        return true;
+        return database.checkCrossServerDuplicate(transactionKey)
+            .thenApply(isDuplicate -> {
+                if (isDuplicate) {
+                    plugin.getLogger().warning("跨服防重复：检测到重复充值，玩家=" + playerName + ", 金额=" + amount);
+                    return false;
+                }
+                return true;
+            });
     }
-    
-    /**
-     * 执行点券发放命令
-     */
-    private boolean executePointsCommand(String playerName, double amount) {
-        try {
-            // 获取配置的点券命令
-            String command = plugin.getConfigManager().getConfig()
-                .getString("points_rebate.points_command", "points give {player} {amount}");
-            
-            // 替换占位符
-            command = command.replace("{player}", playerName)
-                           .replace("{amount}", String.valueOf((int)amount));
-            
-            // 在Folia环境中，确保命令在主线程中执行
-            if (Bukkit.isPrimaryThread()) {
-                // 当前在主线程，直接执行
+
+    /** 在全局线程执行点券发放命令，回调带回结果（不阻塞调用线程）。 */
+    private CompletableFuture<Boolean> executePointsCommand(String playerName, double amount) {
+        String command = plugin.getConfigManager().getConfig()
+            .getString("points_rebate.points_command", "points give {player} {amount}")
+            .replace("{player}", playerName)
+            .replace("{amount}", String.valueOf((int) amount));
+
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        plugin.getScheduler().runGlobal(() -> {
+            try {
                 boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-                
                 if (success) {
                     plugin.getLogger().info("点券发放成功: " + playerName + " 获得 " + amount + " 点券");
                 } else {
                     plugin.getLogger().warning("点券发放失败: " + command);
                 }
-                
-                return success;
-            } else {
-                // 当前在异步线程，使用SchedulerUtils在主线程执行
-                // 创建final变量供lambda表达式使用
-                final String finalCommand = command;
-                final String finalPlayerName = playerName;
-                final double finalAmount = amount;
-                
-                java.util.concurrent.CompletableFuture<Boolean> future = new java.util.concurrent.CompletableFuture<>();
-                
-                com.alinvite.utils.SchedulerUtils.runTask(plugin, () -> {
-                    try {
-                        boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand);
-                        
-                        if (success) {
-                            plugin.getLogger().info("点券发放成功: " + finalPlayerName + " 获得 " + finalAmount + " 点券");
-                        } else {
-                            plugin.getLogger().warning("点券发放失败: " + finalCommand);
-                        }
-                        
-                        future.complete(success);
-                    } catch (Exception e) {
-                        plugin.getLogger().severe("执行点券命令失败: " + e.getMessage());
-                        future.complete(false);
-                    }
-                });
-                
-                return future.get(); // 等待命令执行完成
+                future.complete(success);
+            } catch (Exception e) {
+                plugin.getLogger().severe("执行点券命令失败: " + e.getMessage());
+                future.complete(false);
             }
-            
-        } catch (Exception e) {
-            plugin.getLogger().severe("执行点券命令失败: " + e.getMessage());
-            return false;
-        }
+        });
+        return future;
     }
-    
-    /**
-     * 处理返点逻辑 - 核心返点发放流程
-     * 1. 查找充值玩家的邀请人
-     * 2. 根据邀请人权限计算返点比例
-     * 3. 检查每日返点上限
-     * 4. 发放返点点券给邀请人
-     * 
-     * @param operator 操作者
-     * @param targetPlayer 充值玩家
-     * @param amount 充值金额
-     * @return 返点处理是否成功
-     */
-    private boolean processRebate(String operator, String targetPlayer, double amount) {
+
+    private CompletableFuture<Boolean> processRebate(String targetPlayer, double amount, String transactionKey) {
         UUID targetUuid = getPlayerUuid(targetPlayer);
         if (targetUuid == null) {
             plugin.getLogger().warning("无法获取玩家UUID: " + targetPlayer);
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
-        
-        // 1. 查找邀请人 - 从数据库查询谁邀请了该玩家
-        UUID inviterUuid = database.getInviter(targetUuid).join();
-        if (inviterUuid == null) {
-            plugin.getLogger().info("玩家 " + targetPlayer + " 没有邀请人，跳过返点");
-            return true; // 没有邀请人，充值成功但无返点
-        }
-        
-        // 检查邀请人是否启用了返点功能
-        DatabaseManager.PlayerData inviterData = database.getPlayerData(inviterUuid).join();
-        if (inviterData != null && !inviterData.rebateEnabled) {
-            plugin.getLogger().info("邀请人 " + inviterUuid + " 返点功能被禁用，跳过返点");
-            return true; // 返点功能被禁用，充值成功但无返点
-        }
-        
-        // 2. 获取返点比例 - 根据邀请人的权限组确定返点比例
-        Player inviter = Bukkit.getPlayer(inviterUuid);
-        double rebateRate = getRebateRate(inviter);
-        
-        // 检查是否为贡献返点模式（负值表示贡献模式）
-        boolean isContributionMode = (rebateRate < 0);
-        if (isContributionMode) {
-            rebateRate = -rebateRate; // 转换为正的比例值
-        }
-        
-        double rebateAmount = amount * rebateRate;
-        
-        // 检查返点金额是否有效
-        if (rebateAmount <= 0) {
-            plugin.getLogger().info("返点金额为0（可能是管理员或比例配置为0），跳过发放");
-            return true;
-        }
-        
-        // 3. 检查每日返点上限 - 防止单个玩家一天内获得过多返点
-        if (exceedsDailyLimit(inviterUuid, rebateAmount)) {
-            plugin.getLogger().warning("邀请人 " + inviterUuid + " 今日返点已达上限");
-            return true; // 超过上限，充值成功但无返点
-        }
-        
-        // 4. 根据模式发放返点
-        if (isContributionMode) {
-            // 贡献返点模式：只记录不发放点券
-            return recordContributionRebate(inviterUuid, rebateAmount, operator, targetPlayer, amount);
-        } else {
-            // 正常模式：发放点券返点
-            return giveRebatePoints(inviterUuid, rebateAmount, operator, targetPlayer, amount);
-        }
-    }
-    
-    /**
-     * 获取实际返点比例（忽略现金模式设置）
-     */
-    private double getActualRebateRate(Player player) {
-        if (player == null) {
-            return getDefaultRate();
-        }
-        
-        String permissionPrefix = plugin.getConfigManager().getConfig()
-            .getString("points_rebate.permission_prefix", "alinvite.rebate");
-        
-        String[] groups = {"contribution", "admin", "mvip", "svip", "vip", "default"};
-        
-        for (String group : groups) {
-            String permission = permissionPrefix + "." + group;
-            if (player.hasPermission(permission)) {
-                String configPath = "points_rebate.rebate_rates." + group + ".rate";
-                return plugin.getConfigManager().getConfig().getDouble(configPath, 0.10);
-            }
-        }
-        
-        return getDefaultRate();
-    }
-    
-    /**
-     * 记录贡献返点（不发放点券，只记录到数据库）
-     */
-    private boolean recordContributionRebate(UUID playerUuid, double amount, String operator, String targetPlayer, double originalAmount) {
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null) {
-            plugin.getLogger().warning("邀请人不在线，无法记录贡献返点: " + playerUuid);
-            return false;
-        }
-        
-        try {
-            // 更新数据库中的贡献返点金额
-            boolean success = database.addContributionAmount(playerUuid, amount).join();
-            
-            if (success) {
-                plugin.getLogger().info("贡献返点记录成功: " + player.getName() + " 获得 " + amount + " 点券（贡献模式）");
-                
-                // 发送消息给玩家
-                String message = plugin.getConfigManager().getMessage("points_rebate.contribution_rebate_recorded")
-                    .replace("{player}", targetPlayer)
-                    .replace("{amount}", String.valueOf((int)originalAmount))
-                    .replace("{rebate_amount}", String.valueOf((int)amount));
-                
-                player.sendMessage(message);
-                return true;
-            } else {
-                plugin.getLogger().warning("贡献返点记录失败: " + player.getName());
-                return false;
-            }
-        } catch (Exception e) {
-            plugin.getLogger().severe("记录贡献返点失败: " + e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * 根据玩家权限获取返点比例
-     * 使用配置的权限前缀检查玩家拥有的权限组，按权重从高到低检查
-     * base权限组是给所有玩家的默认返点，无需权限检查
-     */
-    private double getRebateRate(Player player) {
-        if (player == null) {
-            return getDefaultRate();
-        }
-        
-        // 获取权限前缀配置
-        String permissionPrefix = plugin.getConfigManager().getConfig()
-            .getString("points_rebate.permission_prefix", "alinvite.rebate");
-        
-        // 定义所有权限组及其配置路径
-        String[] groups = {"contribution", "admin", "mvip", "svip", "vip", "default"};
-        
-        // 按权重从高到低排序权限组
-        java.util.List<String> sortedGroups = new java.util.ArrayList<>();
-        java.util.Map<String, Integer> groupWeights = new java.util.HashMap<>();
-        
-        for (String group : groups) {
-            String weightPath = "points_rebate.rebate_rates." + group + ".weight";
-            int weight = plugin.getConfigManager().getConfig().getInt(weightPath, 1);
-            groupWeights.put(group, weight);
-        }
-        
-        // 按权重从高到低排序
-        sortedGroups.addAll(java.util.Arrays.asList(groups));
-        sortedGroups.sort((g1, g2) -> {
-            int weight1 = groupWeights.get(g1);
-            int weight2 = groupWeights.get(g2);
-            return Integer.compare(weight2, weight1); // 降序排序
-        });
-        
-        plugin.getLogger().info("权限组权重排序结果: " + sortedGroups);
-        
-        // 按权重从高到低检查权限
-        for (String group : sortedGroups) {
-            String permission = permissionPrefix + "." + group;
-            if (player.hasPermission(permission)) {
-                // 获取该权限组的返点比例
-                String configPath = "points_rebate.rebate_rates." + group + ".rate";
-                double rate = plugin.getConfigManager().getConfig().getDouble(configPath, 0.10);
-                
-                // 检查是否为贡献返点模式
-                String contributionModePath = "points_rebate.rebate_rates." + group + ".contribution_mode";
-                boolean isContributionMode = plugin.getConfigManager().getConfig().getBoolean(contributionModePath, false);
-                
-                // 获取权重值用于日志记录
-                String weightPath = "points_rebate.rebate_rates." + group + ".weight";
-                int weight = plugin.getConfigManager().getConfig().getInt(weightPath, 1);
-                
-                plugin.getLogger().info("玩家 " + player.getName() + " 拥有权限 " + permission + 
-                    " (权重: " + weight + ", 贡献模式: " + isContributionMode + ")，返点比例: " + (rate * 100) + "%");
-                
-                // 如果是贡献返点模式，返回实际比例（但标记为贡献模式）
-                if (isContributionMode) {
-                    // 返回负值表示贡献返点模式，processRebate方法会处理
-                    return -rate; // 贡献返点模式只记录不发放点券
+
+        return AsyncPool.supply(() -> database.getInviterSync(targetUuid))
+            .thenCompose(inviterUuid -> {
+                if (inviterUuid == null) {
+                    plugin.getLogger().info("玩家 " + targetPlayer + " 没有邀请人，跳过返点");
+                    return CompletableFuture.completedFuture(true);
                 }
-                
+                return AsyncPool.supply(() -> database.getPlayerDataSync(inviterUuid))
+                    .thenCompose(inviterData -> {
+                        if (inviterData != null && !inviterData.rebateEnabled) {
+                            plugin.getLogger().info("邀请人返点功能被禁用，跳过返点: " + inviterUuid);
+                            return CompletableFuture.completedFuture(true);
+                        }
+                        Player inviter = Bukkit.getPlayer(inviterUuid);
+                        boolean pointsMode = isPointsMode();
+                        double rate = getRebateRate(inviter);
+                        double rebateAmount = amount * rate;
+                        if (rebateAmount <= 0) {
+                            return CompletableFuture.completedFuture(true);
+                        }
+                        return exceedsDailyLimit(inviterUuid, rebateAmount)
+                            .thenCompose(exceeded -> {
+                                if (exceeded) {
+                                    plugin.getLogger().warning("邀请人 " + inviterUuid + " 今日返点已达上限");
+                                    return CompletableFuture.completedFuture(true);
+                                }
+                                // 流水占用：抢占成功才发放（防跨服/重复推送二次发放）
+                                return AsyncPool.supply(() -> database.tryBeginRebateSync(
+                                        transactionKey, inviterUuid, amount, inviterUuid, rebateAmount))
+                                    .thenCompose(owned -> {
+                                        if (!Boolean.TRUE.equals(owned)) {
+                                            plugin.getLogger().warning("检测到重复充值流水，跳过返点: key=" + transactionKey);
+                                            return CompletableFuture.completedFuture(true);
+                                        }
+                                        java.util.concurrent.CompletableFuture<Boolean> allowed =
+                                                new java.util.concurrent.CompletableFuture<>();
+                                        plugin.getScheduler().runGlobal(() -> {
+                                            try {
+                                                com.alinvite.api.event.RebateGrantEvent event =
+                                                    new com.alinvite.api.event.RebateGrantEvent(
+                                                        inviter, targetPlayer, amount, rebateAmount, pointsMode);
+                                                Bukkit.getPluginManager().callEvent(event);
+                                                allowed.complete(!event.isCancelled());
+                                            } catch (Exception e) {
+                                                allowed.complete(true);
+                                            }
+                                        });
+                                        return allowed.thenCompose(permitted -> {
+                                            if (!Boolean.TRUE.equals(permitted)) {
+                                                plugin.getLogger().info("返点发放被其它插件取消: " + inviterUuid);
+                                                return CompletableFuture.completedFuture(true);
+                                            }
+                                            // 统一进入未领取池：点券模式玩家可自行领取，现金模式由管理员核销
+                                            return parkRebate(inviterUuid, rebateAmount, targetPlayer, amount, pointsMode)
+                                                .thenCompose(success -> {
+                                                    // 事件流水（可追溯，也是窗口期判重依据）
+                                                    if (success) {
+                                                        UUID sourceUuid = getPlayerUuid(targetPlayer);
+                                                        if (sourceUuid != null) {
+                                                            AsyncPool.run(() -> database.insertRebateEventSync(
+                                                                inviterUuid, sourceUuid, amount, rebateAmount, targetPlayer));
+                                                        }
+                                                    }
+                                                    return database.markPointsRebateRecordProcessed(transactionKey)
+                                                        .thenApply(v -> success);
+                                                });
+                                        });
+                                    });
+                            });
+                    });
+            });
+    }
+
+    /**
+     * 返点比例：按配置权重从高到低检查权限组，恒为正值。
+     * 到账方式（点券/现金）由全局 mode 决定，与比例无关。
+     */
+    public double getRebateRate(Player player) {
+        if (player == null) {
+            return getDefaultRate();
+        }
+        String permissionPrefix = plugin.getConfigManager().getConfig()
+            .getString("points_rebate.permission_prefix", "alinvite.rebate");
+
+        for (String group : getSortedGroups()) {
+            String permission = permissionPrefix + "." + group;
+            if (player.hasPermission(permission)) {
+                double rate = plugin.getConfigManager().getConfig()
+                    .getDouble("points_rebate.rebate_rates." + group + ".rate", 0.10);
+                if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
+                    plugin.getLogger().info("玩家 " + player.getName() + " 命中返点权限组 " + group
+                        + "，比例: " + (rate * 100) + "%");
+                }
                 return rate;
             }
         }
-        
-        // 所有玩家默认获得基础返点（无需任何权限，无需检查 alinvite.rebate.base 权限）
+
         double baseRate = plugin.getConfigManager().getConfig()
             .getDouble("points_rebate.rebate_rates.base.rate", 0.05);
-        
-        // 获取基础返点的权重值用于日志记录
-        String baseWeightPath = "points_rebate.rebate_rates.base.weight";
-        int baseWeight = plugin.getConfigManager().getConfig().getInt(baseWeightPath, 0);
-        
-        plugin.getLogger().info("玩家 " + player.getName() + " 使用基础返点比例: " + (baseRate * 100) + 
-            "% (权重: " + baseWeight + ")，无需权限检查");
-        
+        if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
+            plugin.getLogger().info("玩家 " + player.getName() + " 使用基础返点比例: " + (baseRate * 100) + "%");
+        }
         return baseRate;
     }
-    
-    /**
-     * 检查每日返点上限
-     */
-    private boolean exceedsDailyLimit(UUID playerUuid, double newRebate) {
+
+    /** 返利模式是否为点券模式（true = 玩家可自行领取；false = 现金模式，管理员核销后线下发放）。 */
+    public boolean isPointsMode() {
+        String mode = plugin.getConfigManager().getConfig()
+            .getString("points_rebate.mode", "points")
+            .trim()
+            .toLowerCase(java.util.Locale.ROOT);
+        return mode.equals("points");
+    }
+
+    private List<String> getSortedGroups() {
+        List<String> cached = sortedGroups;
+        if (cached != null) {
+            return cached;
+        }
+        String[] groups = {"contribution", "admin", "mvip", "svip", "vip", "default"};
+        Map<String, Integer> weights = new HashMap<>();
+        for (String group : groups) {
+            weights.put(group, plugin.getConfigManager().getConfig()
+                .getInt("points_rebate.rebate_rates." + group + ".weight", 1));
+        }
+        List<String> sorted = new java.util.ArrayList<>(Arrays.asList(groups));
+        sorted.sort((a, b) -> Integer.compare(weights.get(b), weights.get(a)));
+        sortedGroups = sorted;
+        return sorted;
+    }
+
+    private CompletableFuture<Boolean> exceedsDailyLimit(UUID playerUuid, double newRebate) {
         double dailyLimit = plugin.getConfigManager().getConfig()
             .getDouble("points_rebate.limits.max_rebate_per_day", 1000.0);
-        
-        double todayRebate = database.getTodayRebateTotal(playerUuid).join();
-        
-        return (todayRebate + newRebate) > dailyLimit;
+        return database.getTodayRebateTotal(playerUuid)
+            .thenApply(todayRebate -> (todayRebate + newRebate) > dailyLimit);
     }
-    
+
     /**
-     * 发放返点点券
+     * 返利统一进入"未领取池"并写入返利记录：
+     *  - 点券模式：玩家可在主菜单 S 键手动领取，计入贡献返点余额；
+     *  - 现金模式：玩家不可自行领取，由管理员核销后线下发放。
      */
-    private boolean giveRebatePoints(UUID playerUuid, double amount, String operator, String targetPlayer, double originalAmount) {
-        Player player = Bukkit.getPlayer(playerUuid);
-        if (player == null) {
-            plugin.getLogger().warning("邀请人不在线，无法发放返点: " + playerUuid);
-            return false;
-        }
-        
-        String command = plugin.getConfigManager().getConfig()
-            .getString("points_rebate.points_command", "points give {player} {amount}");
-        
-        command = command.replace("{player}", player.getName())
-                       .replace("{amount}", String.valueOf((int)amount));
-        
-        // 确保命令在主线程中执行
-        if (Bukkit.isPrimaryThread()) {
-            // 当前在主线程，直接执行
-            boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-            
-            if (success) {
-                plugin.getLogger().info("返点发放成功: " + player.getName() + " 获得 " + amount + " 点券");
-                
-                // 发送消息给玩家
-                String message = plugin.getConfigManager().getMessage("points_rebate.rebate_given")
-                    .replace("{player}", targetPlayer)
-                    .replace("{amount}", String.valueOf((int)originalAmount))
-                    .replace("{rebate_amount}", String.valueOf((int)amount));
-                
-                player.sendMessage(message);
-            }
-            
-            return success;
-        } else {
-            // 当前在异步线程，使用SchedulerUtils在主线程执行
-            // 创建final变量供lambda表达式使用
-            final String finalCommand = command;
-            final Player finalPlayer = player;
-            final String finalTargetPlayer = targetPlayer;
-            final double finalOriginalAmount = originalAmount;
-            final double finalAmount = amount;
-            
-            java.util.concurrent.CompletableFuture<Boolean> future = new java.util.concurrent.CompletableFuture<>();
-            
-            com.alinvite.utils.SchedulerUtils.runTask(plugin, () -> {
-                try {
-                    boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand);
-                    
-                    if (success) {
-                        plugin.getLogger().info("返点发放成功: " + finalPlayer.getName() + " 获得 " + finalAmount + " 点券");
-                        
-                        // 发送消息给玩家
-                        String message = plugin.getConfigManager().getMessage("points_rebate.rebate_given")
-                            .replace("{player}", finalTargetPlayer)
-                            .replace("{amount}", String.valueOf((int)finalOriginalAmount))
-                            .replace("{rebate_amount}", String.valueOf((int)finalAmount));
-                        
-                        finalPlayer.sendMessage(message);
-                    }
-                    
-                    future.complete(success);
-                } catch (Exception e) {
-                    plugin.getLogger().severe("执行返点命令失败: " + e.getMessage());
-                    future.complete(false);
-                }
-            });
-            
-            try {
-                return future.get(); // 等待命令执行完成
-            } catch (Exception e) {
-                plugin.getLogger().severe("等待返点命令执行失败: " + e.getMessage());
+    /**
+     * 返利统一进入"未领取池"并写入返利记录（邀请人不在线也可入池，上线后领取）。
+     * 点券模式下本方法不再被调用（已无即时发放路径），保留以兼容扩展。
+     */
+    private CompletableFuture<Boolean> parkRebate(UUID playerUuid, double amount, String targetPlayer, double originalAmount, boolean pointsMode) {
+        return AsyncPool.supply(() -> {
+            database.addUnclaimedRebateSync(playerUuid, amount);
+            database.addRebateRecordSync(playerUuid, amount, targetPlayer);
+            database.updateTotalRebatePointsSync(playerUuid, amount);
+            return true;
+        }).thenApply(success -> {
+            if (!success) {
+                plugin.getLogger().warning("返利入池失败: " + playerUuid);
                 return false;
             }
-        }
+            // 在线则实时通知；离线玩家上线后可在主菜单领取
+            Player player = Bukkit.getPlayer(playerUuid);
+            if (player != null) {
+                String message = plugin.getConfigManager().getMessage("points_rebate.rebate_pending_notify")
+                    .replace("{player}", targetPlayer)
+                    .replace("{amount}", String.valueOf((int) originalAmount))
+                    .replace("{rebate_amount}", formatAmount(amount));
+                plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(message));
+            }
+            return true;
+        });
     }
-    
+
     /**
-     * 生成跨服交易标识（用于防重复检查）
-     * 使用玩家UUID和充值金额生成唯一标识，确保同一笔充值在不同服务器上标识相同
+     * 玩家手动领取未领取返点（主菜单 S 按钮左键），行为由模式决定：
+     *  - 点券模式（contribution_mode: true）：清零未领取池并执行
+     *    config 的 points_rebate.claim_command（适配任意点券插件）；
+     *    命令未配置时计入贡献返点余额。
+     *  - 现金模式（contribution_mode: false）：不可自行领取，
+     *    提示联系管理员；管理员核销（unclaimed clear）后线下发放。
+     */
+    public void claimRebate(Player player) {
+        UUID uuid = player.getUniqueId();
+        boolean pointsMode = isPointsMode();
+        if (!pointsMode) {
+            // 现金模式：不可自行领取，须管理员核销后线下发放
+            plugin.getScheduler().runAtPlayer(player, () ->
+                player.sendMessage(plugin.getConfigManager().getMessage("points_rebate.claim_blocked_cash")));
+            return;
+        }
+        final String claimCommand = plugin.getConfigManager().getConfig()
+            .getString("points_rebate.claim_command", "").trim();
+        AsyncPool.supply(() -> claimCommand.isEmpty()
+                ? database.claimUnclaimedRebateSync(uuid)      // 计入贡献返点余额
+                : database.clearUnclaimedRebateSync(uuid))     // 命令模式：仅清零未领取池
+            .thenAccept(claimed -> plugin.getScheduler().runAtPlayer(player, () -> {
+                if (claimed == null || claimed <= 0) {
+                    player.sendMessage(plugin.getConfigManager().getMessage("points_rebate.claim_empty"));
+                    plugin.getMenuManager().openMainMenu(player);
+                    return;
+                }
+                String displayAmount = formatAmount(claimed);
+                if (!claimCommand.isEmpty()) {
+                    // 点券模式 + 已配置发放命令：全局线程执行，适配任意点券插件
+                    String cmd = claimCommand
+                        .replace("{player}", player.getName())
+                        .replace("{amount}", displayAmount);
+                    plugin.getScheduler().runGlobal(() -> {
+                        try {
+                            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+                        } catch (Exception e) {
+                            plugin.getLogger().severe("执行返利领取命令失败: " + cmd + " - " + e.getMessage());
+                        }
+                    });
+                    player.sendMessage(plugin.getConfigManager().getMessage("points_rebate.claim_success_command")
+                        .replace("{amount}", displayAmount));
+                } else {
+                    player.sendMessage(plugin.getConfigManager().getMessage("points_rebate.claim_success")
+                        .replace("{amount}", displayAmount));
+                    plugin.getCacheManager().invalidateContribution(uuid);
+                }
+                plugin.getSync().sendInvalidate(uuid, "contribution", "rebate", "unclaimed");
+                plugin.getMenuManager().openMainMenu(player);
+            }));
+    }
+
+    /**
+     * 玩家当前返点比例展示文本（含贡献模式标记），供 GUI / 占位符使用。
+     */
+    public String getRebateRateDisplay(Player player) {
+        double rate = getRebateRate(player);
+        boolean pointsMode = isPointsMode();
+        String percent = rate * 100 == Math.floor(rate * 100) && !Double.isInfinite(rate)
+            ? String.valueOf((long) (rate * 100))
+            : String.format(Locale.ROOT, "%.1f", rate * 100);
+        String tag = plugin.getConfigManager().getMessageRaw(
+            pointsMode ? "points_rebate.mode_tag_points" : "points_rebate.mode_tag_cash");
+        return percent + "%" + tag;
+    }
+
+    private String formatAmount(double amount) {
+        return amount == Math.floor(amount) && !Double.isInfinite(amount)
+            ? String.valueOf((long) amount)
+            : String.format(Locale.ROOT, "%.2f", amount);
+    }
+
+    /**
+     * 跨服交易标识。
+     * TODO（行为变更待确认）：当前为 uuid+金额，激活防重复前应改为订单号或加时间窗，
+     * 否则同日同金额两笔充值会被误判为重复。
      */
     private String generateTransactionKey(UUID playerUuid, double amount) {
-        // 使用完整的UUID和精确金额，确保跨服一致性
-        return String.format("rebate_%s_%.2f", 
-            playerUuid.toString(),
-            amount);
+        return String.format(Locale.ROOT, "rebate_%s_%.2f", playerUuid, amount);
     }
-    
-    /**
-     * 生成简单交易标识（用于日志记录）
-     */
-    private String generateTransactionLogId(UUID playerUuid, double amount) {
-        return String.format("%s_%.2f", 
-            playerUuid.toString().substring(0, 8), // 使用UUID前8位
-            amount);
-    }
-    
-    /**
-     * 获取玩家UUID
-     */
+
     private UUID getPlayerUuid(String playerName) {
         Player player = Bukkit.getPlayer(playerName);
         return player != null ? player.getUniqueId() : null;
     }
-    
-    /**
-     * 获取默认返点比例
-     */
+
     private double getDefaultRate() {
         return plugin.getConfigManager().getConfig()
             .getDouble("points_rebate.rebate_rates.default.rate", 0.10);

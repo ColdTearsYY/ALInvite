@@ -1,0 +1,73 @@
+# ALInvite main menu (English)
+# S = rebate center (left: claim pending rebate / right: rebate history), X = close
+
+config_version: 1
+
+main_menu:
+  title: "&6&lInvite System"
+  shape:
+    - "####S####"
+    - "#A#####B#"
+    - "####X####"
+  items:
+    S:
+      material: 'GOLD_INGOT'
+      custom_model_data: 0
+      name: "&6&lRebate Center"
+      lore:
+        - "&6▶ &8Rebate Overview"
+        - "&e▸ &7Total rebates: &e%total_rebate% points"
+        - "&a▸ &7Unclaimed: &a%unclaimed_rebate% points"
+        - "&6▸ &7Your rebate rate: &e%rebate_rate%"
+        - ""
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fClaim pending rebates"
+        - "&7• &eRight click &e➤ &fView rebate history"
+      triggers:
+        left:
+          - 'claim_rebate'
+        right:
+          - 'open_rebate_history'
+    A:
+      material: 'WRITABLE_BOOK'
+      custom_model_data: 0
+      name: "&a&lEnter Invite Code"
+      lore:
+        - "&6▶ &8Invite Code"
+        - "&e▸ &7Bind status: &f%bind_status%"
+        - "&a▸ &7Inviter: &f%inviter_name%"
+        - ""
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fEnter an invite code to bind"
+      triggers:
+        left:
+          - 'input_code'
+    B:
+      material: 'DIAMOND'
+      custom_model_data: 0
+      name: "&6&lInvite Center"
+      lore:
+        - "&6▶ &8Invite Overview"
+        - "&e▸ &7Your invite code: &e%invite_code%"
+        - "&a▸ &7Players invited: &e%total_invites%"
+        - ""
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fOpen the invite center"
+      triggers:
+        left:
+          - 'open_veteran'
+    X:
+      material: 'BARRIER'
+      custom_model_data: 0
+      name: "&cClose"
+      lore:
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fClose the menu"
+      triggers:
+        left:
+          - 'close'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '

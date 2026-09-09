@@ -1,0 +1,146 @@
+# ALInvite 邀请中心（里程碑）菜单
+# M 为动态槽位：每页容量 = shape 中 M 的数量；里程碑状态 locked/available/claimed 自动套用对应样式。
+# R = 返回上个菜单，H = 返回主菜单，B = 礼包商店，P/N = 翻页（页码文案翻页时自动重绘）。
+
+config_version: 1
+
+veteran_menu:
+  title: "&6&l邀请中心"
+  shape:
+    - "####G####"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "P#B#H#R#N"
+  items:
+    B:
+      material: 'CHEST'
+      custom_model_data: 0
+      name: "&b&l礼包商店"
+      lore:
+        - "&6▶ &8礼包商店"
+        - "&e▸ &7购买礼包，提升你邀请新人获得的奖励"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f打开礼包商店"
+      triggers:
+        left:
+          - 'open_shop'
+    G:
+      material: 'NETHER_STAR'
+      custom_model_data: 0
+      name: "&e&l当前礼包"
+      lore:
+        - "&6▶ &8当前礼包"
+        - "&e▸ &7礼包名称: &f%gift_name%"
+        - "&a▸ &7剩余有效期: &f%gift_remaining_days%"
+        - ""
+        - "&6▶ &8礼包内容"
+        - "%gift_reward_lore%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f打开礼包商店切换"
+      triggers:
+        left:
+          - 'open_shop'
+    M:
+      dynamic: true
+      material: 'GOLD_BLOCK'
+      custom_model_data: 0
+      name: "&6&l%milestone_name%"
+      lore:
+        - "&6▶ &8里程碑"
+        - "&e▸ &7邀请进度: &e%current%&7/&a%required%"
+        - "&a▸ &7状态: &f%milestone_status%"
+        - ""
+        - "&6▶ &8奖励预览"
+        - "%reward_lore%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f领取奖励"
+      states:
+        locked:
+          material: 'RED_STAINED_GLASS_PANE'
+          name: "&c&l%milestone_name%"
+          lore:
+            - "&6▶ &8里程碑"
+            - "&c▸ &7邀请进度: &c%current%&7/&a%required%"
+            - "&c▸ &7状态: &c未解锁"
+            - "&c▸ &7还需 &a%remaining% &c人解锁"
+            - ""
+            - "&6▶ &8奖励预览"
+            - "%reward_lore%"
+        claimed:
+          material: 'NETHER_STAR'
+          name: "&a&l%milestone_name%"
+          lore:
+            - "&6▶ &8里程碑"
+            - "&a▸ &7邀请进度: &a%current%&7/&a%required%"
+            - "&a▸ &7状态: &a✔ 已领取"
+            - ""
+            - "&6▶ &8奖励预览"
+            - "%reward_lore%"
+        available:
+          material: 'GOLD_INGOT'
+          name: "&6&l%milestone_name%"
+          lore:
+            - "&6▶ &8里程碑"
+            - "&e▸ &7邀请进度: &e%current%&7/&a%required%"
+            - "&6▸ &7状态: &e✔ 可领取"
+            - ""
+            - "&6▶ &8奖励预览"
+            - "%reward_lore%"
+            - ""
+            - "&6▶ &8操作"
+            - "&7• &a鼠标左键 &a➤ &f领取奖励"
+      triggers:
+        left:
+          - 'claim_milestone:%milestone_required%'
+    H:
+      material: 'OAK_DOOR'
+      custom_model_data: 0
+      name: "&a&l返回主菜单"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f返回主菜单"
+      triggers:
+        left:
+          - 'open_main'
+    R:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l返回"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f返回上个菜单"
+      triggers:
+        left:
+          - 'back'
+    P:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l上一页"
+      lore:
+        - "&6▶ &8翻页"
+        - "&e▸ &7当前页: &e%page%&7/&f%total_pages%"
+        - "%prev_page_hint%"
+      triggers:
+        left:
+          - 'prev_page'
+    N:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l下一页"
+      lore:
+        - "&6▶ &8翻页"
+        - "&e▸ &7当前页: &e%page%&7/&f%total_pages%"
+        - "%next_page_hint%"
+      triggers:
+        left:
+          - 'next_page'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '

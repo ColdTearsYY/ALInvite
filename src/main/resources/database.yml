@@ -1,0 +1,39 @@
+# ALInvite 数据库与跨服通信配置
+# 本文件独立于 config.yml，重启/reload 时自动加载。
+# 多服务器集群：所有服务器的本文件配置必须完全一致（共享同一数据库与频道），
+# 仅 config.yml 中的 serverid / serverName 各服不同。
+
+# 数据存储
+database:
+  # 数据库类型：sqlite / mysql
+  type: 'sqlite'
+  # SQLite 数据库文件名（相对于插件文件夹）
+  sqlite_file: 'data.db'
+  # 所有表名前缀（跨服共享数据时各服前缀必须一致）
+  table_prefix: 'alinvite_'
+  # 连接池关闭时是否自动重建
+  auto_reconnect: true
+  # 最大重连尝试次数
+  max_reconnect_attempts: 3
+  # MySQL 配置（仅当 type=mysql 时生效）
+  mysql:
+    host: 'localhost'
+    port: 3306
+    database: 'minecraft'
+    user: 'root'
+    password: ''
+    # 连接池大小（跨服大服可适当调高）
+    pool_size: 10
+    # 连接超时（毫秒）
+    connection_timeout: 30000
+
+# Redis 跨服同步：跨服公告广播、玩家数据缓存失效广播
+# 未启用时插件照常运行，仅无跨服实时同步
+redis:
+  # 是否启用 Redis 跨服同步
+  enabled: false
+  host: 'localhost'
+  port: 6379
+  password: ''
+  # 所有互联的服务器必须使用相同频道
+  channel: 'alinvite_channel'

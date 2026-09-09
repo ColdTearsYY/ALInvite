@@ -1,0 +1,78 @@
+# ALInvite 返利记录菜单
+# R 为动态槽位：每条记录显示发放时间与金额（时间倒序，最近 100 条）。
+# 来源玩家未记录时 lore 中的来源行自动隐藏（条件行）。
+# B = 返回上个菜单，H = 返回主菜单，X = 关闭，P/N = 翻页。
+
+config_version: 1
+
+rebate_history:
+  title: "&6&l返利记录"
+  shape:
+    - "####T####"
+    - "#RRRRRRR#"
+    - "#RRRRRRR#"
+    - "#RRRRRRR#"
+    - "#RRRRRRR#"
+    - "P###H###N"
+  items:
+    T:
+      material: 'NAME_TAG'
+      custom_model_data: 0
+      name: "&6&l返利记录"
+      lore:
+        - "&6▶ &8本菜单介绍"
+        - "&e▸ &7这里记录你获得的每一笔充值返利"
+        - "&a▸ &7包括发放时间、金额与来源玩家"
+        - ""
+        - "&e▸ &7累计返点: &e%total_rebate% 点券"
+        - "&a▸ &7未领取: &a%unclaimed_rebate% 点券"
+        - "&6▸ &7你的返利比例: &e%rebate_rate%"
+        - ""
+        - "&6▶ &8如何领取"
+        - "&7• &a主菜单「充值返利」&a➤ &f左键手动领取"
+    R:
+      dynamic: true
+      material: 'PAPER'
+      custom_model_data: 0
+      name: "&6&l%record_time%"
+      lore:
+        - "&6▶ &8返利到账"
+        - "&e▸ %record_text%"
+        - "&7来源玩家: &f%record_source%"
+    H:
+      material: 'OAK_DOOR'
+      custom_model_data: 0
+      name: "&a&l返回主菜单"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f返回主菜单"
+      triggers:
+        left:
+          - 'open_main'
+    P:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l上一页"
+      lore:
+        - "&6▶ &8翻页"
+        - "&e▸ &7当前页: &e%page%&7/&f%total_pages%"
+        - "%prev_page_hint%"
+      triggers:
+        left:
+          - 'prev_page'
+    N:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l下一页"
+      lore:
+        - "&6▶ &8翻页"
+        - "&e▸ &7当前页: &e%page%&7/&f%total_pages%"
+        - "%next_page_hint%"
+      triggers:
+        left:
+          - 'next_page'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '

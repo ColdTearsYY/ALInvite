@@ -392,3 +392,110 @@ public class MyEconomyPlugin extends JavaPlugin {
 ---
 
 **ALInvite API** - 强大的第三方集成支持！ 🚀
+
+---
+
+## 🆕 2.0.0 新增 API
+
+### 📊 数据查询扩展
+
+```java
+// 未领取返点数量（手动领取制下的待领取池）
+CompletableFuture<Double> ALInviteAPI.getUnclaimedRebate(UUID uuid);
+
+// 贡献返点余额
+CompletableFuture<Double> ALInviteAPI.getContribution(UUID uuid);
+
+// 已领取里程碑集合（元素为所需邀请人数）
+CompletableFuture<Set<Integer>> ALInviteAPI.getClaimedMilestones(UUID uuid);
+
+// 指定里程碑是否已领取
+CompletableFuture<Boolean> ALInviteAPI.hasClaimedMilestone(UUID uuid, int required);
+
+// 待领取里程碑（邀请人离线期间达成的）
+CompletableFuture<List<String>> ALInviteAPI.getPendingMilestones(UUID uuid);
+
+// 最近的返利记录（时间倒序），limit 建议不超过 100
+CompletableFuture<List<ALInviteAPI.RebateEntry>> ALInviteAPI.getRebateRecords(UUID uuid, int limit);
+// RebateEntry: long time() 毫秒时间戳 / double amount() 返点数量 / String sourcePlayer() 充值玩家名
+
+// 礼包剩余天数（无期限 -1，已过期 0）
+CompletableFuture<Integer> ALInviteAPI.getGiftRemainingDays(UUID uuid);
+
+// 礼包状态：未购买 / 已购买 / 已过期 / 永久
+CompletableFuture<String> ALInviteAPI.getGiftStatus(UUID uuid);
+
+// 下一个未达成里程碑：数值 / 名称（全部达成返回 "MAX"）
+CompletableFuture<String> ALInviteAPI.getNextMilestone(UUID uuid);
+CompletableFuture<String> ALInviteAPI.getNextMilestoneName(UUID uuid);
+
+// 玩家当前充值返点比例（0.15 = 15%）
+// 负值 = 点券模式（玩家可自行领取）；正值 = 现金模式（管理员核销后线下发放）
+double ALInviteAPI.getRebateRate(Player player);
+
+// 管理员核销未领取返点（线下发放现金后执行），返回核销金额
+double ALInvite.clearUnclaimedRebateSync(UUID uuid);
+
+// 返点比例展示文本（如 "15%" / "20%（贡献模式）"）
+String ALInviteAPI.getRebateRateDisplay(Player player);
+```
+
+### 🖥️ 服务器标识
+
+```java
+String serverId = ALInviteAPI.getServerId();      // 本服唯一 ID（config.yml serverid）
+String alias    = ALInviteAPI.getServerAlias();   // 服务器别称（config.yml serverName）
+```
+
+### 🎧 事件（Bukkit 标准事件，全局线程触发）
+
+```java
+import com.alinvite.api.event.InviteBindEvent;
+import com.alinvite.api.event.MilestoneClaimEvent;
+import com.alinvite.api.event.RebateGrantEvent;
+
+// 1) 邀请绑定成功
+@EventHandler
+public void onInviteBind(InviteBindEvent event) {
+    Player invitee = event.getInvitee();        // 绑定邀请码的玩家
+    UUID inviter   = event.getInviterUuid();    // 邀请人
+    String code    = event.getInviteCode();     // 绑定的邀请码
+}
+
+// 2) 里程碑领取（可取消：取消后不发放奖励，领取资格仍保留）
+@EventHandler
+public void onMilestoneClaim(MilestoneClaimEvent event) {
+    Player player  = event.getPlayer();
+    int required   = event.getRequired();       // 所需邀请人数
+    String name    = event.getMilestone().getName();
+    event.setCancelled(true);                   // 阻止发放奖励
+}
+
+// 3) 充值返利入池（可取消：取消后本次返利不计入未领取池，也不会重复发放）
+@EventHandler
+public void onRebateGrant(RebateGrantEvent event) {
+    Player inviter      = event.getInviter();
+    String sourcePlayer = event.getSourcePlayerName(); // 充值的玩家
+    double rebate       = event.getRebateAmount();
+    boolean pointsMode  = event.isPointsMode();         // true = 点券模式（可自行领取）
+    event.setCancelled(true);                           // 阻止本次入池
+}
+```
+
+### 🔁 邀请成功监听器（旧接口，现已实装）
+
+```java
+ALInviteAPI.registerInviteListener((inviterUuid, inviteeUuid) -> {
+    // 邀请绑定成功时回调（全局线程）
+});
+```
+
+### 💳 充值流水键（跨服防重复发放）
+
+```java
+// 第三方充值系统请传入自己的订单号/流水号：
+// 相同流水号的重复推送只会发放一次返利（跨服共享数据库时同样生效）
+ALInviteAPI.processPointsRecharge("我的充值插件", player, 648, false, "order-20260910-0001");
+```
+
+不传流水键时，每次调用视为一次独立充值（例如管理员的 givedj 指令）。

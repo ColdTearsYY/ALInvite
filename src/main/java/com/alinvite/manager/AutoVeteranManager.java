@@ -2,7 +2,6 @@ package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
 import com.alinvite.config.ConfigManager;
-import com.alinvite.utils.SchedulerUtils;
 import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -21,6 +20,7 @@ public class AutoVeteranManager {
 
     private final ALInvite plugin;
     private final Set<UUID> alreadyGranted = ConcurrentHashMap.newKeySet();
+    private int checkTaskId = -1;
     private boolean enabled;
     private String playtimePlaceholder;
     private double requiredHours;   // 转换后的需求小时数
@@ -103,12 +103,20 @@ public class AutoVeteranManager {
     }
 
     /**
-     * 启动定时检查
+     * 启动定时检查（句柄登记，reload 前先 shutdown，杜绝旧定时器泄漏）
      */
     private void startScheduler() {
-        // 初始延迟 5 秒，之后按配置间隔检查
+        shutdown();
         long intervalTicks = checkInterval * 20L;
-        SchedulerUtils.runTaskTimerAsync(plugin, this::checkAllOnlinePlayers, 100L, intervalTicks);
+        checkTaskId = plugin.getScheduler().runAsyncTimer(this::checkAllOnlinePlayers, 100L, intervalTicks);
+    }
+
+    /** 取消定时检查任务。 */
+    public void shutdown() {
+        if (checkTaskId != -1) {
+            plugin.getScheduler().cancel(checkTaskId);
+            checkTaskId = -1;
+        }
     }
 
     /**
@@ -121,7 +129,8 @@ public class AutoVeteranManager {
         }
 
         for (Player player : Bukkit.getOnlinePlayers()) {
-            checkPlayer(player);
+            // PAPI 占位符解析切实体线程执行，避免异步线程解析
+            plugin.getScheduler().runAtPlayer(player, () -> checkPlayer(player));
         }
     }
 
@@ -251,7 +260,7 @@ public class AutoVeteranManager {
         String command = grantCommand.replace("{player}", player.getName());
         final String finalCommand = command;
 
-        SchedulerUtils.runTask(plugin, () -> {
+        plugin.getScheduler().runGlobal(() -> {
             boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCommand);
             if (success) {
                 plugin.getLogger().info("自动老玩家: " + player.getName()
@@ -282,8 +291,9 @@ public class AutoVeteranManager {
      */
     public void onPlayerJoin(Player player) {
         if (!enabled) return;
-        // 延迟几秒检查，等待 PAPI 数据加载
-        SchedulerUtils.runTaskLaterAsync(plugin, () -> checkPlayer(player), 60L); // 3秒后
+        // 延迟几秒检查，等待 PAPI 数据加载；PAPI 解析在实体线程执行
+        plugin.getScheduler().runAsyncDelayed(() ->
+            plugin.getScheduler().runAtPlayer(player, () -> checkPlayer(player)), 60L);
     }
 
     /**

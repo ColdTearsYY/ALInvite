@@ -4,6 +4,34 @@
 
 **ALInvite** 是一个功能强大的我的世界服务器邀请系统插件，旨在通过激励玩家邀请新玩家加入服务器，促进服务器人口增长和社区活跃度。插件支持多语言、自定义菜单、礼包商店、里程碑奖励等丰富功能，完全兼容 Folia 多线程服务器。
 
+## 📅 更新日志
+
+### v1.1.2 (2026-04-26)
+
+**修复内容**：
+- 修复了 `InventoryView` 兼容性问题（`IncompatibleClassChangeError`）的根本原因
+- 将 `catch (Exception e)` 改为 `catch (Throwable t)`，确保捕获所有类型的错误
+- 此修复彻底解决了 Purpur 1.20.1 服务器上的兼容性问题
+
+### v1.1.1 (2026-04-25)
+
+**修复内容**：
+
+- 修复了 `InventoryView` 兼容性问题，解决了 1.20.1 服务器上的 `IncompatibleClassChangeError` 错误
+- 优化了控制台颜色显示，确保彩色输出正常
+
+**新增功能**：
+
+- 支持礼包购买时限设置，可在配置文件中为每个礼包设置 `duration_days` 参数
+- 实现了礼包过期自动检查，过期后会自动切换到玩家拥有的最高等级礼包
+- 添加了礼包状态变量：`%alinvite_gift_status%` 和 `%alinvite_gift_remaining_days%`
+- 支持在菜单 lore 中使用其他插件的 PlaceholderAPI 变量
+
+**兼容性**：
+
+- 支持 Minecraft 1.20.1 - 1.21.11 版本
+- 兼容 Purpur 等主流服务器核心
+
 ### ✨ 主要特性
 
 | 功能模块                  | 描述                        |

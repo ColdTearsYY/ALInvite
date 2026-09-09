@@ -1,12 +1,15 @@
 package com.alinvite.listeners;
 
 import com.alinvite.ALInvite;
-import com.alinvite.utils.SchedulerUtils;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 
+/**
+ * 玩家加入：异步预取邀请码/补发待领奖励/礼包过期检查。
+ * 全链无 join；奖励发放由 RewardService 切回实体线程。
+ */
 public class InviteListener implements Listener {
 
     private final ALInvite plugin;
@@ -30,17 +33,13 @@ public class InviteListener implements Listener {
             return;
         }
 
-        // 已有 veteran 权限 → 正常处理邀请码、里程碑、礼包
-        SchedulerUtils.runTaskAsynchronously(plugin, () -> {
-            String code = plugin.getDatabaseManager().getInviteCodeByPlayer(player.getUniqueId()).join();
-            if (code == null) {
-                plugin.getInviteManager().generateInviteCode(player.getUniqueId()).thenAccept(generatedCode -> {
-                    // 邀请码生成完成后的处理
-                });
-            }
-            plugin.getMilestoneManager().checkPendingMilestones(player);
-            // 检查礼包是否过期
-            plugin.checkGiftExpiration(player);
-        });
+        // 已有 veteran 权限 → 预热数据、补发待领取里程碑、检查礼包过期
+        plugin.getInviteManager().ensureInviteCode(player.getUniqueId())
+            .thenCompose(code -> plugin.getMilestoneManager().checkPendingMilestones(player))
+            .thenCompose(v -> plugin.checkGiftExpiration(player))
+            .exceptionally(throwable -> {
+                plugin.getLogger().warning("玩家加入处理失败 (" + player.getName() + "): " + throwable.getMessage());
+                return null;
+            });
     }
 }

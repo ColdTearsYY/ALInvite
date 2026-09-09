@@ -1,7 +1,6 @@
 package com.alinvite.listeners;
 
 import com.alinvite.ALInvite;
-import com.alinvite.utils.SchedulerUtils;
 import com.alinvite.utils.VaultEconomyUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -62,9 +61,8 @@ public class PermissionGroupRewardListener implements Listener {
             }
         }
 
-        com.alinvite.utils.SchedulerUtils.runTaskLater(plugin, () -> {
-            checkGroupUpgrade(player, playerUuid);
-        }, 20L);
+        plugin.getScheduler().runGlobalDelayed(() ->
+            checkGroupUpgrade(player, playerUuid), 20L);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -76,9 +74,8 @@ public class PermissionGroupRewardListener implements Listener {
         Player player = event.getPlayer();
         UUID playerUuid = player.getUniqueId();
 
-        com.alinvite.utils.SchedulerUtils.runTaskLater(plugin, () -> {
-            checkGroupUpgrade(player, playerUuid);
-        }, 20L);
+        plugin.getScheduler().runGlobalDelayed(() ->
+            checkGroupUpgrade(player, playerUuid), 20L);
     }
 
     @EventHandler
@@ -141,9 +138,9 @@ public class PermissionGroupRewardListener implements Listener {
                     giveRewardIfNeeded(inviterUuid, money, points, player.getName(), currentGroup);
                 }
 
-                plugin.getDatabaseManager().addClaimedPermissionGroup(inviterUuid, playerUuid, currentGroup).join();
-                plugin.getDatabaseManager().updatePermissionGroup(playerUuid, currentGroup);
-                lastKnownGroup.put(playerUuid, currentGroup);
+                plugin.getDatabaseManager().addClaimedPermissionGroup(inviterUuid, playerUuid, currentGroup)
+                    .thenCompose(v -> plugin.getDatabaseManager().updatePermissionGroup(playerUuid, currentGroup))
+                    .thenRun(() -> lastKnownGroup.put(playerUuid, currentGroup));
             });
         });
     }
@@ -154,7 +151,7 @@ public class PermissionGroupRewardListener implements Listener {
         if (money > 0) {
             boolean vaultAvailable = VaultEconomyUtils.isAvailable(plugin);
             if (inviter != null && vaultAvailable) {
-                SchedulerUtils.runTask(plugin, inviter, () -> {
+                plugin.getScheduler().runAtPlayer(inviter, () -> {
                     if (VaultEconomyUtils.deposit(plugin, inviter, money)) {
                         String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
                             .replace("{player}", newPlayerName)
@@ -176,7 +173,7 @@ public class PermissionGroupRewardListener implements Listener {
                         .replace("%player%", targetName)
                         .replace("%amount%", String.valueOf((int) money));
                     if (inviter != null) {
-                        SchedulerUtils.runTask(plugin, inviter, () -> {
+                        plugin.getScheduler().runAtPlayer(inviter, () -> {
                             Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd);
                             String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
                                 .replace("{player}", newPlayerName)
@@ -185,7 +182,7 @@ public class PermissionGroupRewardListener implements Listener {
                             inviter.sendMessage(msg);
                         });
                     } else {
-                        SchedulerUtils.runTask(plugin, () ->
+                        plugin.getScheduler().runGlobal(() ->
                             Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd));
                     }
                 }
@@ -194,10 +191,10 @@ public class PermissionGroupRewardListener implements Listener {
 
         if (points > 0) {
             if (inviter != null) {
-                SchedulerUtils.runTask(plugin, inviter, () ->
+                plugin.getScheduler().runAtPlayer(inviter, () ->
                     givePointsToPlayer(inviterUuid, points, newPlayerName, group, true));
             } else {
-                SchedulerUtils.runTask(plugin, () ->
+                plugin.getScheduler().runGlobal(() ->
                     givePointsToPlayer(inviterUuid, points, newPlayerName, group, false));
             }
         }

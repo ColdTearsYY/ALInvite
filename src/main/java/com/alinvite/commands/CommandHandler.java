@@ -4,7 +4,6 @@ import com.alinvite.ALInvite;
 import com.alinvite.config.ConfigManager;
 import com.alinvite.utils.PapiDetector;
 import com.alinvite.utils.PlaceholderResolver;
-import com.alinvite.utils.SchedulerUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -101,7 +100,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         }
 
         if (args.length < 2) {
-            plugin.getMenuListener().startCodeInput(player);
+            plugin.getMenuManager().getInputService().startCodeInput(player);
             return;
         }
 
@@ -147,25 +146,42 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             return;
         }
 
-        plugin.getInviteManager().getTotalInvites(player.getUniqueId()).thenAccept(total -> {
-            String claimed = plugin.getDatabaseManager().getClaimedMilestones(player.getUniqueId()).join();
-            String giftId = plugin.getDatabaseManager().getGiftId(player.getUniqueId()).join();
-            String giftName = "无";
+        plugin.getInviteManager().getTotalInvites(player.getUniqueId())
+            .thenCompose(total -> plugin.getDatabaseManager().getClaimedMilestones(player.getUniqueId())
+                .thenCompose(claimedJson -> plugin.getDatabaseManager().getGiftId(player.getUniqueId())
+                    .thenApply(giftId -> {
+                        String giftName = "无";
+                        if (giftId != null) {
+                            var gift = plugin.getGiftManager().getGift(giftId);
+                            if (gift != null) {
+                                giftName = ConfigManager.colorize(gift.name);
+                            }
+                        }
+                        return new Object[]{total, claimedJson, giftName};
+                    })))
+            .thenAccept(payload -> {
+                Object[] parts = (Object[]) payload;
+                String message = plugin.getConfigManager().getMessage("commands.stats", player)
+                    .replace("{total}", String.valueOf(parts[0]))
+                    .replace("{claimed_milestones}", formatClaimedMilestones((String) parts[1]))
+                    .replace("{gift_name}", (String) parts[2]);
+                plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(message));
+            });
+    }
 
-            if (giftId != null) {
-                var gift = plugin.getGiftManager().getGift(giftId);
-                if (gift != null) {
-                    giftName = ConfigManager.colorize(gift.name);
-                }
+    /** 已领取里程碑列表渲染为友好文本（修复显示原始 JSON 的问题）。 */
+    private String formatClaimedMilestones(String claimedJson) {
+        if (claimedJson == null || claimedJson.isBlank() || claimedJson.equals("[]")) {
+            return "0";
+        }
+        java.util.List<String> ids = new ArrayList<>();
+        for (String part : claimedJson.replace("[", "").replace("]", "").replace("\"", "").split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                ids.add(trimmed);
             }
-
-            String message = plugin.getConfigManager().getMessage("commands.stats", player)
-                .replace("{total}", String.valueOf(total))
-                .replace("{claimed_milestones}", claimed)
-                .replace("{gift_name}", giftName);
-
-            player.sendMessage(message);
-        });
+        }
+        return ids.isEmpty() ? "0" : String.join(", ", ids);
     }
 
     private void handleBuyGift(CommandSender sender) {
@@ -418,7 +434,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                                 final String finalPointsCommand = pointsCommand;
                                 plugin.getLogger().info("执行兑换命令: " + finalPointsCommand);
                                 
-                                SchedulerUtils.runTask(plugin, () -> {
+                                plugin.getScheduler().runGlobal(() -> {
                                     boolean pointsSuccess = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalPointsCommand);
                                     
                                     if (pointsSuccess) {
@@ -550,6 +566,48 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage(plugin.getConfigManager().getMessage("commands.admin.announce_success"));
                 }
             }
+            case "unclaimed" -> {
+                // /alinvite admin unclaimed <玩家>              查看未领取余额
+                // /alinvite admin unclaimed clear <玩家>        核销清零（线下已发放现金后执行）
+                if (args.length < 3) {
+                    sender.sendMessage("用法: /alinvite admin unclaimed <玩家> | unclaimed clear <玩家>");
+                    return;
+                }
+                if (args[2].equalsIgnoreCase("clear")) {
+                    if (args.length < 4) {
+                        sender.sendMessage("用法: /alinvite admin unclaimed clear <玩家>");
+                        return;
+                    }
+                    UUID targetUuid = getPlayerUuid(args[3]);
+                    plugin.getDatabaseManager().clearUnclaimedRebate(targetUuid).thenAccept(cleared -> {
+                        String msg = cleared != null && cleared > 0
+                            ? "已核销玩家 " + args[3] + " 的未领取返点: " + String.format("%.2f", cleared) + " 点券（请确认已线下发放）"
+                            : "玩家 " + args[3] + " 没有未领取的返点";
+                        sender.sendMessage(msg);
+                    });
+                    return;
+                }
+                UUID targetUuid = getPlayerUuid(args[2]);
+                plugin.getDatabaseManager().getUnclaimedRebate(targetUuid).thenAccept(amount -> {
+                    String msg = amount != null && amount > 0
+                        ? "玩家 " + args[2] + " 的未领取返点: " + String.format("%.2f", amount) + " 点券"
+                        : "玩家 " + args[2] + " 没有未领取的返点";
+                    sender.sendMessage(msg);
+                });
+            }
+            case "rebate" -> {
+                if (args.length < 3) {
+                    sender.sendMessage("用法: /alinvite admin rebate <玩家>");
+                    return;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null) {
+                    sender.sendMessage("玩家不存在或不在线");
+                    return;
+                }
+                plugin.getMenuManager().openRebateHistoryMenu(target);
+                sender.sendMessage("已为玩家 " + target.getName() + " 打开返利记录菜单");
+            }
             case "checkgroup" -> {
                 if (args.length < 3) {
                     sender.sendMessage("用法: /alinvite admin checkgroup <玩家>");
@@ -560,7 +618,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage("玩家不存在或不在线");
                     return;
                 }
-                SchedulerUtils.runTask(plugin, () -> {
+                plugin.getScheduler().runGlobal(() -> {
                     plugin.getPermissionGroupRewardListener().manualCheck(target);
                     sender.sendMessage("已为玩家 " + target.getName() + " 检查权限组奖励");
                 });
@@ -595,12 +653,12 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         List<String> completions = new ArrayList<>();
 
         if (args.length == 1) {
-            completions.addAll(Arrays.asList("code", "stats", "buygift", "help", "admin", "givedj", "bind"));
+            completions.addAll(Arrays.asList("code", "stats", "contrib", "buygift", "help", "admin", "givedj", "bind"));
             return filterByInput(completions, args[0]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "announce", "checkgroup", "contrib", "papi"));
+            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed"));
             return filterByInput(completions, args[1]);
         }
 
@@ -618,7 +676,11 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             );
         }
 
-        if (args.length == 3 && (args[1].equalsIgnoreCase("reset") || args[1].equalsIgnoreCase("clearcode") || args[1].equalsIgnoreCase("checkgroup"))) {
+        if (args.length == 3 && args[1].equalsIgnoreCase("unclaimed")) {
+            return filterByInput(Arrays.asList("clear"), args[2]);
+        }
+
+        if (args.length == 3 && (args[1].equalsIgnoreCase("reset") || args[1].equalsIgnoreCase("clearcode") || args[1].equalsIgnoreCase("checkgroup") || args[1].equalsIgnoreCase("rebate"))) {
             return filterByInput(
                 Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()),
                 args[2]
@@ -797,7 +859,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                         default -> menuName;
                     };
 
-                    var section = plugin.getConfigManager().getMenusConfig().getConfigurationSection(mappedName);
+                    var section = plugin.getMenuManager().getLoader().getMergedRaw().getConfigurationSection(mappedName);
                     if (section == null) {
                         sender.sendMessage(ConfigManager.colorize("&c菜单不存在: " + mappedName));
                         sender.sendMessage(ConfigManager.colorize("&7可用菜单: main_menu, veteran_menu, shop_menu"));
@@ -810,7 +872,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 } else {
                     // 扫描所有菜单
                     sender.sendMessage(ConfigManager.colorize("&6━━━━━━ &e扫描所有菜单 &6━━━━━━"));
-                    var results = PapiDetector.scanAllMenus(plugin.getConfigManager().getMenusConfig());
+                    var results = PapiDetector.scanAllMenus(plugin.getMenuManager().getLoader().getMergedRaw());
                     int totalThirdParty = 0;
                     for (java.util.Map.Entry<String, PapiDetector.ScanResult> entry : results.entrySet()) {
                         sender.sendMessage(ConfigManager.colorize("&e▸ " + entry.getKey() + ":"));

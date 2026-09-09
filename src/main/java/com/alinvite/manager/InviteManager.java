@@ -1,73 +1,86 @@
 package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
+import com.alinvite.utils.AsyncPool;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.security.SecureRandom;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 邀请码生成与邀请绑定。
+ * 生成流程全链无 join：候选码生成与查重走 IO 线程池，同线程直查。
+ */
 public class InviteManager {
 
     private final ALInvite plugin;
     private final SecureRandom random = new SecureRandom();
-    private final Set<UUID> generatingCodes = Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+    private final Set<UUID> generatingCodes = ConcurrentHashMap.newKeySet();
 
     public InviteManager(ALInvite plugin) {
         this.plugin = plugin;
     }
 
-    public CompletableFuture<String> generateInviteCode(UUID uuid) {
-        if (generatingCodes.contains(uuid)) {
-            return CompletableFuture.completedFuture(plugin.getCacheManager().getInviteCode(uuid));
+    /** 确保玩家已有邀请码（无则生成），返回当前邀请码。 */
+    public CompletableFuture<String> ensureInviteCode(UUID uuid) {
+        String cached = plugin.getCacheManager().getInviteCode(uuid);
+        if (cached != null && !cached.isEmpty()) {
+            return CompletableFuture.completedFuture(cached);
         }
-        generatingCodes.add(uuid);
-        
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                int length = plugin.getConfigManager().getConfig().getInt("invite_code.length", 6);
-                String charset = plugin.getConfigManager().getConfig().getString("invite_code.charset", "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789");
-                String prefix = plugin.getConfigManager().getConfig().getString("invite_code.prefix", "");
+        return AsyncPool.supply(() -> plugin.getDatabaseManager().getInviteCodeByPlayerSync(uuid))
+            .thenCompose(code -> code != null && !code.isEmpty()
+                ? CompletableFuture.completedFuture(code)
+                : generateInviteCode(uuid));
+    }
 
-                String code;
-                int attempts = 0;
-                do {
-                    StringBuilder sb = new StringBuilder(prefix);
-                    for (int i = 0; i < length; i++) {
-                        sb.append(charset.charAt(random.nextInt(charset.length())));
-                    }
-                    code = sb.toString();
-                    attempts++;
-                    if (attempts > 10) {
-                        plugin.getLogger().warning("生成邀请码失败，已尝试 " + attempts + " 次");
-                        break;
-                    }
-                } while (isCodeExists(code).join());
+    public CompletableFuture<String> generateInviteCode(UUID uuid) {
+        if (!generatingCodes.add(uuid)) {
+            String cached = plugin.getCacheManager().getInviteCode(uuid);
+            return CompletableFuture.completedFuture(cached);
+        }
 
+        return uniqueCode(0)
+            .thenCompose(code -> plugin.getDatabaseManager().getPlayerData(uuid).thenCompose(data ->
+                data != null
+                    ? plugin.getDatabaseManager().updateInviteCode(uuid, code).thenApply(v -> code)
+                    : plugin.getDatabaseManager().createPlayerData(uuid, code).thenApply(v -> code)))
+            .thenApply(code -> {
+                plugin.getCacheManager().setInviteCode(uuid, code);
                 return code;
-            } finally {
-                generatingCodes.remove(uuid);
-            }
+            })
+            .whenComplete((code, throwable) -> generatingCodes.remove(uuid));
+    }
+
+    private CompletableFuture<String> uniqueCode(int attempt) {
+        return AsyncPool.supply(() -> {
+            String code = randomCode();
+            return plugin.getDatabaseManager().getPlayerByInviteCodeSync(code) != null ? null : code;
         }).thenCompose(code -> {
-            // 检查玩家数据是否存在
-            return plugin.getDatabaseManager().getPlayerData(uuid).thenCompose(data -> {
-                if (data != null) {
-                    // 玩家数据存在，更新邀请码
-                    return plugin.getDatabaseManager().updateInviteCode(uuid, code).thenApply(v -> code);
-                } else {
-                    // 玩家数据不存在，创建新数据
-                    return plugin.getDatabaseManager().createPlayerData(uuid, code).thenApply(v -> code);
-                }
-            });
-        }).thenApply(code -> {
-            plugin.getCacheManager().setInviteCode(uuid, code);
-            return code;
+            if (code != null) {
+                return CompletableFuture.completedFuture(code);
+            }
+            if (attempt >= 10) {
+                plugin.getLogger().warning("生成唯一邀请码已尝试超过 10 次，使用最后一次候选码");
+                return AsyncPool.supply(this::randomCode);
+            }
+            return uniqueCode(attempt + 1);
         });
+    }
+
+    private String randomCode() {
+        int length = plugin.getConfigManager().getConfig().getInt("invite_code.length", 6);
+        String charset = plugin.getConfigManager().getConfig().getString("invite_code.charset", "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789");
+        String prefix = plugin.getConfigManager().getConfig().getString("invite_code.prefix", "");
+
+        StringBuilder sb = new StringBuilder(prefix);
+        for (int i = 0; i < length; i++) {
+            sb.append(charset.charAt(random.nextInt(charset.length())));
+        }
+        return sb.toString();
     }
 
     public CompletableFuture<Boolean> isCodeExists(String code) {
@@ -102,8 +115,8 @@ public class InviteManager {
             })
             .thenCompose(result -> {
                 if (result != null) return CompletableFuture.completedFuture(result);
-                
-                return hasUsedInviteCode(inviteeUuid).thenCompose(hasUsed -> {
+
+                return plugin.getDatabaseManager().hasUsedInviteCode(inviteeUuid).thenCompose(hasUsed -> {
                     if (hasUsed) {
                         return CompletableFuture.completedFuture(new InviteResult(false, InviteResultType.ALREADY_USED));
                     }
@@ -112,16 +125,16 @@ public class InviteManager {
             })
             .thenCompose(result -> {
                 if (result != null) return CompletableFuture.completedFuture(result);
-                
+
                 return getInviterByCode(code).thenCompose(inviterUuid -> {
                     if (inviterUuid == null) {
                         return CompletableFuture.completedFuture(new InviteResult(false, InviteResultType.INVALID_CODE));
                     }
-                    
+
                     if (inviterUuid.equals(inviteeUuid)) {
                         return CompletableFuture.completedFuture(new InviteResult(false, InviteResultType.SELF_INVITE));
                     }
-                    
+
                     if (plugin.getConfigManager().getConfig().getBoolean("ip_restriction.prevent_self_ip", true)) {
                         String inviterIp = getPlayerIp(inviterUuid);
                         if (inviterIp != null && inviterIp.equals(inviteeIp)) {
@@ -129,7 +142,6 @@ public class InviteManager {
                         }
                     }
 
-                    // 检查邀请人是否达到最大邀请人数上限
                     int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
                     if (maxInvites > 0) {
                         return plugin.getDatabaseManager().getPlayerData(inviterUuid).thenCompose(inviterData -> {
@@ -149,10 +161,6 @@ public class InviteManager {
             });
     }
 
-    private CompletableFuture<Boolean> hasUsedInviteCode(UUID uuid) {
-        return plugin.getDatabaseManager().hasUsedInviteCode(uuid);
-    }
-
     private String getPlayerIp(UUID uuid) {
         return Bukkit.getOnlinePlayers().stream()
             .filter(p -> p.getUniqueId().equals(uuid))
@@ -161,9 +169,6 @@ public class InviteManager {
             .orElse(null);
     }
 
-    /**
-     * 添加邀请记录并更新邀请人计数（提取为公共方法，供 processInvite 和 bindInviteCode 复用）
-     */
     private CompletableFuture<InviteResult> doAddInviteRecord(UUID inviterUuid, UUID inviteeUuid, String inviteeIp, String inviteeName) {
         return plugin.getDatabaseManager().addInviteRecord(inviterUuid, inviteeUuid, inviteeIp, inviteeName)
             .thenCompose(v -> plugin.getDatabaseManager().getPlayerData(inviterUuid))
@@ -186,7 +191,7 @@ public class InviteManager {
     }
 
     public CompletableFuture<String> getInviteCode(UUID uuid) {
-        return plugin.getCacheManager().getInviteCodeAsync(uuid).thenApply(v -> plugin.getCacheManager().getInviteCode(uuid));
+        return plugin.getCacheManager().getInviteCodeAsync(uuid);
     }
 
     public CompletableFuture<BindResult> bindInviteCode(Player player, String code) {
@@ -218,7 +223,7 @@ public class InviteManager {
             })
             .thenCompose(result -> {
                 if (result != null) return CompletableFuture.completedFuture(result);
-                
+
                 return plugin.getDatabaseManager().hasUsedInviteCode(playerUuid).thenCompose(hasUsed -> {
                     if (hasUsed) {
                         return CompletableFuture.completedFuture(new BindResult(false, BindResultType.ALREADY_USED));
@@ -228,7 +233,7 @@ public class InviteManager {
             })
             .thenCompose(result -> {
                 if (result != null) return CompletableFuture.completedFuture(result);
-                
+
                 boolean allowVeteranToBind = plugin.getConfigManager().getConfig()
                     .getBoolean("invite_code.allow_veteran_to_bind", false);
                 if (!allowVeteranToBind) {
@@ -241,45 +246,38 @@ public class InviteManager {
             })
             .thenCompose(result -> {
                 if (result != null) return CompletableFuture.completedFuture(result);
-                
+
                 return getInviterByCode(trimmedCode).thenCompose(inviterUuid -> {
-                        if (inviterUuid != null && inviterUuid.equals(playerUuid)) {
-                            return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
-                        }
-                        
-                        String inviterIp = inviterUuid != null ? getPlayerIp(inviterUuid) : null;
+                    if (inviterUuid != null && inviterUuid.equals(playerUuid)) {
+                        return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
+                    }
 
-                        // 只有当 ip_restriction.enabled=true 时，才启用 prevent_self_ip 检查
-                        if (plugin.getConfigManager().getConfig().getBoolean("ip_restriction.enabled", false)) {
-                            if (plugin.getConfigManager().getConfig().getBoolean("ip_restriction.prevent_self_ip", true)) {
-                                if (inviterUuid != null) {
-                                    if (inviterIp != null && inviterIp.equals(playerIp)) {
-                                        return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
+                    String inviterIp = inviterUuid != null ? getPlayerIp(inviterUuid) : null;
+
+                    if (plugin.getConfigManager().getConfig().getBoolean("ip_restriction.enabled", false)
+                            && plugin.getConfigManager().getConfig().getBoolean("ip_restriction.prevent_self_ip", true)
+                            && inviterUuid != null
+                            && inviterIp != null && inviterIp.equals(playerIp)) {
+                        return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
+                    }
+
+                    return plugin.getDatabaseManager().getIpInviteCount(playerIp)
+                        .thenCompose(currentCount -> determineFunctionPermissions(playerUuid, playerIp, inviterIp, currentCount))
+                        .thenCompose(result2 -> {
+                            if (result2 != null) return CompletableFuture.completedFuture(result2);
+
+                            int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
+                            if (maxInvites > 0 && inviterUuid != null) {
+                                return plugin.getDatabaseManager().getPlayerData(inviterUuid).thenCompose(inviterData -> {
+                                    if (inviterData != null && inviterData.totalInvites >= maxInvites) {
+                                        return CompletableFuture.completedFuture(new BindResult(false, BindResultType.INVITER_LIMIT_REACHED));
                                     }
-                                }
+                                    return doBindInviteRecord(playerUuid, playerIp, playerName, inviterUuid, trimmedCode, player);
+                                });
                             }
-                        }
-                        
-                        return plugin.getDatabaseManager().getIpInviteCount(playerIp).thenCompose(currentCount -> {
-                            // 检测同IP绑定顺序并设置功能权限
-                            return determineFunctionPermissions(playerUuid, playerIp, inviterIp, currentCount);
-                        })
-                    .thenCompose(result2 -> {
-                        if (result2 != null) return CompletableFuture.completedFuture(result2);
 
-                        // 检查邀请人是否达到最大邀请人数上限
-                        int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
-                        if (maxInvites > 0 && inviterUuid != null) {
-                            return plugin.getDatabaseManager().getPlayerData(inviterUuid).thenCompose(inviterData -> {
-                                if (inviterData != null && inviterData.totalInvites >= maxInvites) {
-                                    return CompletableFuture.completedFuture(new BindResult(false, BindResultType.INVITER_LIMIT_REACHED));
-                                }
-                                return doBindInviteRecord(playerUuid, playerIp, playerName, inviterUuid, trimmedCode, player);
-                            });
-                        }
-
-                        return doBindInviteRecord(playerUuid, playerIp, playerName, inviterUuid, trimmedCode, player);
-                    });
+                            return doBindInviteRecord(playerUuid, playerIp, playerName, inviterUuid, trimmedCode, player);
+                        });
                 });
             })
             .exceptionally(ex -> {
@@ -336,107 +334,100 @@ public class InviteManager {
         }
     }
 
-    /**
-     * 执行绑定邀请记录（提取为公共方法）
-     */
     private CompletableFuture<BindResult> doBindInviteRecord(UUID playerUuid, String playerIp, String playerName, UUID inviterUuid, String trimmedCode, Player player) {
         return plugin.getDatabaseManager().updateInviteCode(playerUuid, trimmedCode)
             .thenCompose(v -> {
                 plugin.getCacheManager().invalidateInviteCode(playerUuid);
                 return plugin.getDatabaseManager().addInviteRecord(inviterUuid, playerUuid, playerIp, playerName);
             })
-            .thenCompose(v -> plugin.getDatabaseManager().getPlayerData(inviterUuid))
-            .thenCompose(data -> {
-                if (data != null) {
-                    int newTotal = data.totalInvites + 1;
-                    return plugin.getDatabaseManager().updateInviteCount(inviterUuid, newTotal)
-                        .thenAccept(v -> {
-                            plugin.getCacheManager().invalidateStats(inviterUuid);
-                            plugin.getMilestoneManager().checkMilestones(inviterUuid, newTotal);
-                        })
-                        .thenApply(v -> new BindResult(true, BindResultType.SUCCESS));
+            .thenCompose(inserted -> {
+                if (!Boolean.TRUE.equals(inserted)) {
+                    // 防跨服/并发重复绑定记录：唯一索引拦截
+                    return CompletableFuture.completedFuture(new BindResult(false, BindResultType.ALREADY_USED));
                 }
-                return CompletableFuture.completedFuture(new BindResult(true, BindResultType.SUCCESS));
-            })
-            .thenApply(result3 -> {
-                plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
-                return result3;
+                return plugin.getDatabaseManager().getPlayerData(inviterUuid)
+                    .thenCompose(data -> {
+                        if (data != null) {
+                            int newTotal = data.totalInvites + 1;
+                            return plugin.getDatabaseManager().updateInviteCount(inviterUuid, newTotal)
+                                .thenAccept(v -> {
+                                    plugin.getCacheManager().invalidateStats(inviterUuid);
+                                    plugin.getMilestoneManager().checkMilestones(inviterUuid, newTotal);
+                                })
+                                .thenApply(v -> new BindResult(true, BindResultType.SUCCESS));
+                        }
+                        return CompletableFuture.completedFuture(new BindResult(true, BindResultType.SUCCESS));
+                    })
+                    .thenApply(result -> {
+                        if (result.success) {
+                            // 通知旧式监听器与 Bukkit 事件（全局线程）
+                            plugin.getScheduler().runGlobal(() -> {
+                                com.alinvite.api.ALInviteAPI.fireInviteSuccess(inviterUuid, playerUuid);
+                                Bukkit.getPluginManager().callEvent(
+                                    new com.alinvite.api.event.InviteBindEvent(player, inviterUuid, trimmedCode));
+                            });
+                            plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
+                        }
+                        return result;
+                    });
             });
     }
 
-    public void startBindCodeInput(Player player) {
-        player.sendMessage(plugin.getConfigManager().getMessage("bind.enter_code"));
-    }
-
-    /**
-     * 检测同IP绑定顺序并设置功能权限
-     */
     private CompletableFuture<BindResult> determineFunctionPermissions(UUID playerUuid, String playerIp, String inviterIp, int currentCount) {
         Player player = Bukkit.getPlayer(playerUuid);
-        
-        // 如果IP限制启用（enabled=true），则完全禁止同IP绑定
+
         if (plugin.getConfigManager().getConfig().getBoolean("ip_restriction.enabled", false)) {
             if (currentCount > 0) {
                 if (player != null) {
-                    player.sendMessage(plugin.getConfigManager().getMessage("function_restrictions.bind_failed_ip_restriction"));
+                    plugin.getScheduler().runAtPlayer(player, () ->
+                        player.sendMessage(plugin.getConfigManager().getMessage("function_restrictions.bind_failed_ip_restriction")));
                 }
                 return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
             }
-            // 第一个绑定，设置所有功能为启用
             if (player != null) {
-                player.sendMessage(plugin.getConfigManager().getMessage("function_restrictions.bind_success_full"));
+                plugin.getScheduler().runAtPlayer(player, () ->
+                    player.sendMessage(plugin.getConfigManager().getMessage("function_restrictions.bind_success_full")));
             }
             return plugin.getDatabaseManager().updateFunctionPermissions(playerUuid, playerIp, true, true, true)
                 .thenApply(v -> null);
         }
-        
-        // 判断是否是真正的同IP绑定（邀请者和被邀请者IP相同）
+
         boolean isSameIp = inviterIp != null && inviterIp.equals(playerIp);
-        
+
         boolean milestoneEnabled;
         boolean rebateEnabled;
         boolean giftEnabled;
-        
+
         if (isSameIp) {
-            // 同IP绑定：使用 flexible_mode 配置
             milestoneEnabled = plugin.getConfigManager().getConfig().getBoolean("ip_restriction.flexible_mode.milestone", false);
             rebateEnabled = plugin.getConfigManager().getConfig().getBoolean("ip_restriction.flexible_mode.rebate", true);
             giftEnabled = plugin.getConfigManager().getConfig().getBoolean("ip_restriction.flexible_mode.gift", false);
         } else {
-            // 不同IP绑定：所有功能都启用
             milestoneEnabled = true;
             rebateEnabled = true;
             giftEnabled = true;
         }
 
-        // 发送功能权限提示
         if (player != null) {
-            if (milestoneEnabled && rebateEnabled && giftEnabled) {
-                player.sendMessage(plugin.getConfigManager().getMessage("function_restrictions.bind_success_full"));
-            } else {
-                // 根据实际配置生成动态提示消息
-                StringBuilder message = new StringBuilder(plugin.getConfigManager().getMessage("function_restrictions.bind_success_limited") + "\n");
-                
-                if (milestoneEnabled) {
-                    message.append(plugin.getConfigManager().getMessage("function_restrictions.bind_success_milestone_enabled") + "\n");
+            plugin.getScheduler().runAtPlayer(player, () -> {
+                if (milestoneEnabled && rebateEnabled && giftEnabled) {
+                    player.sendMessage(plugin.getConfigManager().getMessage("function_restrictions.bind_success_full"));
                 } else {
-                    message.append(plugin.getConfigManager().getMessage("function_restrictions.bind_success_milestone_disabled") + "\n");
+                    StringBuilder message = new StringBuilder(plugin.getConfigManager().getMessage("function_restrictions.bind_success_limited") + "\n");
+
+                    message.append(plugin.getConfigManager().getMessage(milestoneEnabled
+                            ? "function_restrictions.bind_success_milestone_enabled"
+                            : "function_restrictions.bind_success_milestone_disabled") + "\n");
+                    message.append(plugin.getConfigManager().getMessage(rebateEnabled
+                            ? "function_restrictions.bind_success_rebate_enabled"
+                            : "function_restrictions.bind_success_rebate_disabled") + "\n");
+                    message.append(plugin.getConfigManager().getMessage(giftEnabled
+                            ? "function_restrictions.bind_success_gift_enabled"
+                            : "function_restrictions.bind_success_gift_disabled") + "\n");
+
+                    player.sendMessage(message.toString());
                 }
-                
-                if (rebateEnabled) {
-                    message.append(plugin.getConfigManager().getMessage("function_restrictions.bind_success_rebate_enabled") + "\n");
-                } else {
-                    message.append(plugin.getConfigManager().getMessage("function_restrictions.bind_success_rebate_disabled") + "\n");
-                }
-                
-                if (giftEnabled) {
-                    message.append(plugin.getConfigManager().getMessage("function_restrictions.bind_success_gift_enabled") + "\n");
-                } else {
-                    message.append(plugin.getConfigManager().getMessage("function_restrictions.bind_success_gift_disabled") + "\n");
-                }
-                
-                player.sendMessage(message.toString());
-            }
+            });
         }
 
         return plugin.getDatabaseManager().updateFunctionPermissions(playerUuid, playerIp, milestoneEnabled, rebateEnabled, giftEnabled)

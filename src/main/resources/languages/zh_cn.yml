@@ -4,61 +4,7 @@
 
 prefix: "&6[邀请系统] &r"
 
-commands:
-  reload: "&a配置文件已重新加载"
-  code: "&7你的邀请码: &e&n{invite_code}"
-  stats: |
-    &a========== 邀请统计 ==========
-    &7你的邀请码: &e&n{invite_code}
-    &7邀请人数: &e{total}
-    &7已领取里程碑: &e{claimed_milestones}
-    &7当前礼包: &e{gift_name}
-  buygift:
-    success: "&a成功购买礼包 {gift_name}&a！现在你邀请的新玩家将获得该礼包。"
-    switch_success: "&a成功切换到礼包 {gift_name}&a！"
-    already_active: "&c礼包 {gift_name} &c已经是当前使用的礼包！"
-    fail_money: "&c金币不足，需要 {price} 金币"
-    fail_points: "&c点券不足，需要 {price} 点券"
-    already_owned: "&c你已经拥有此礼包"
-    no_permission: "&c您是新玩家，暂时无法购买礼包"
-  admin:
-    help: |
-      &6===== ALInvite 管理指令 =====
-      &e/alinvite admin help &7- 显示帮助信息
-      &e/alinvite admin reload &7- 重载插件配置
-      &e/alinvite admin givecode <玩家> &7- 生成邀请码
-      &e/alinvite admin clearcode <玩家> &7- 清除玩家邀请码
-      &e/alinvite admin addinvite <玩家> <数量> &7- 增加邀请次数
-      &e/alinvite admin reset <玩家> &7- 重置玩家邀请数据
-      &e/alinvite admin announce <玩家> <里程碑值> &7- 发送全服公告
-      &e/alinvite admin checkgroup <玩家> &7- 检查权限组奖励
-      &e/alinvite admin contrib <玩家> &7- 查看贡献返点
-      &e/alinvite admin contrib add <玩家> <金额> &7- 增加贡献返点
-      &e/alinvite admin contrib set <玩家> <金额> &7- 设置贡献返点
-      &e/alinvite admin contrib deduct <玩家> <金额> &7- 扣除贡献返点
-      &e/alinvite admin contrib clear <玩家> &7- 清空贡献返点
-      &e/alinvite admin contrib h <玩家> <金额> &7- 兑换贡献返点
-      &e/alinvite givedj <玩家> <数量> &7- 为玩家充值点券
-      &6============================
-    givecode_success: "&a已为玩家 {player} 生成邀请码: {invite_code}"
-    clearcode_success: "&a已清除玩家 {player} 的邀请码"
-    addinvite_success: "&a已为玩家 {player} 增加 {amount} 邀请人数"
-    reset_success: "&a已重置玩家 {player} 的邀请数据"
-    announce_success: "&a已发送公告"
-    contribution_deducted: "&a已扣除玩家 {player} 的贡献返点: {amount} 点券"
-    contribution_exchanged: "&a已兑换玩家 {player} 的贡献返点: {amount} 点券已发放"
-    contribution_exchange_failed: "&a已扣除玩家 {player} 的贡献返点: {amount} 点券，但点券发放失败"
-    contribution_player_exchanged: "&a您以花费贡献返点: {amount}，兑换点券: {amount}点券"
-    contribution_player_deducted: "&a您的贡献返点已被扣除: {amount} 点券"
-  help: |
-    &6===== ALInvite 指令帮助 =====
-    &e/alinvite &7- 打开邀请菜单
-    &e/alinvite bind &7- 输入邀请码绑定
-    &e/alinvite code &7- 查看你的邀请码
-    &e/alinvite stats &7- 查看邀请统计
-    &6===== ALInvite 管理员指令 =====
-    &e/alinvite admin &7- 管理指令帮助
-
+# 通用提示
 errors:
   player_only: "&c只有玩家才能执行此命令"
   no_permission: "&c你没有权限"
@@ -69,43 +15,143 @@ errors:
   no_invite_code: "&c你暂时未解锁邀请码"
   inviter_limit_reached: "&c该邀请码的主人已达到最大邀请人数限制，无法继续邀请"
 
+# 指令
+commands:
+  reload: "&a配置文件已重新加载"
+  code: "&7你的邀请码: &e&n{invite_code}"
+  # 多行文案建议写成列表，一行一条，方便编辑
+  stats:
+    - "&a========== 邀请统计 =========="
+    - "&7你的邀请码: &e&n{invite_code}"
+    - "&7邀请人数: &e{total}"
+    - "&7已领取里程碑: &e{claimed_milestones}"
+    - "&7当前礼包: &e{gift_name}"
+  help:
+    - "&6===== ALInvite 指令帮助 ====="
+    - "&e/alinvite &7- 打开邀请菜单"
+    - "&e/alinvite bind &7- 输入邀请码绑定"
+    - "&e/alinvite code &7- 查看你的邀请码"
+    - "&e/alinvite stats &7- 查看邀请统计"
+    - "&6===== ALInvite 管理员指令 ====="
+    - "&e/alinvite admin &7- 管理指令帮助"
+  buygift:
+    success: "&a成功购买礼包 {gift_name}&a！现在你邀请的新玩家将获得该礼包。"
+    switch_success: "&a成功切换到礼包 {gift_name}&a！"
+    already_active: "&c礼包 {gift_name} &c已经是当前使用的礼包！"
+    fail_money: "&c金币不足，需要 {price} 金币"
+    fail_points: "&c点券不足，需要 {price} 点券"
+    no_permission: "&c您是新玩家，暂时无法购买礼包"
+  admin:
+    help:
+      - "&6===== ALInvite 管理指令 ====="
+      - "&e/alinvite admin help &7- 显示帮助信息"
+      - "&e/alinvite admin reload &7- 重载插件配置"
+      - "&e/alinvite admin givecode <玩家> &7- 生成邀请码"
+      - "&e/alinvite admin clearcode <玩家> &7- 清除玩家邀请码"
+      - "&e/alinvite admin addinvite <玩家> <数量> &7- 增加邀请次数"
+      - "&e/alinvite admin reset <玩家> &7- 重置玩家邀请数据"
+      - "&e/alinvite admin announce <玩家> <里程碑值> &7- 发送全服公告"
+      - "&e/alinvite admin rebate <玩家> &7- 打开该玩家的返利记录菜单"
+      - "&e/alinvite admin unclaimed <玩家> &7- 查看未领取返点余额"
+      - "&e/alinvite admin unclaimed clear <玩家> &7- 核销未领取返点（线下已发放后执行）"
+      - "&e/alinvite admin checkgroup <玩家> &7- 检查权限组奖励"
+      - "&e/alinvite admin contrib <玩家> &7- 查看贡献返点"
+      - "&e/alinvite admin contrib add <玩家> <金额> &7- 增加贡献返点"
+      - "&e/alinvite admin contrib set <玩家> <金额> &7- 设置贡献返点"
+      - "&e/alinvite admin contrib deduct <玩家> <金额> &7- 扣除贡献返点"
+      - "&e/alinvite admin contrib clear <玩家> &7- 清空贡献返点"
+      - "&e/alinvite admin contrib h <玩家> <金额> &7- 兑换贡献返点"
+      - "&e/alinvite givedj <玩家> <数量> &7- 为玩家充值点券"
+      - "&6============================"
+    givecode_success: "&a已为玩家 {player} 生成邀请码: {invite_code}"
+    clearcode_success: "&a已清除玩家 {player} 的邀请码"
+    addinvite_success: "&a已为玩家 {player} 增加 {amount} 邀请人数"
+    reset_success: "&a已重置玩家 {player} 的邀请数据"
+    announce_success: "&a已发送公告"
+    contribution_deducted: "&a已扣除玩家 {player} 的贡献返点: {amount} 点券"
+    contribution_exchanged: "&a已兑换玩家 {player} 的贡献返点: {amount} 点券已发放"
+    contribution_exchange_failed: "&a已扣除玩家 {player} 的贡献返点: {amount} 点券，但点券发放失败"
+    contribution_player_exchanged: "&a您以花费贡献返点: {amount}，兑换点券: {amount}点券"
+    contribution_player_deducted: "&a您的贡献返点已被扣除: {amount} 点券"
 
-points_rebate:
-  rebate_given: "&a您邀请的新人 &e{player}&a 充值了 &6{amount}&a 点券，您获得了 &e{rebate_amount}&a 点返点"
-  contribution_rebate_recorded: "&a您邀请的新人 &e{player}&a 充值了 &6{amount}&a 点券，您获得了 &e{rebate_amount}&a 点贡献返点（已记录）"
+# 绑定 / 输入对话框
+dialog:
+  prompt: "&a请输入邀请码（输入 {cancel_key} 取消）"
+  success: "&a邀请码验证成功！你获得了奖励"
+  fail: "&c邀请码无效"
+  empty_code: "&c邀请码不能为空！"
+  timeout: "&c输入超时，请重新点击按钮"
+  cancel: "&c已取消邀请码输入"
+  ip_limit: "&c你的 IP 已被其他玩家使用过邀请码"
+  self_invite: "&c你不能使用自己的邀请码"
 
+# 礼包商店
+buygift:
+  success: "&a成功购买礼包 {gift_name}&a！现在你邀请的新玩家将获得该礼包。"
+  switch_success: "&a成功切换到礼包 {gift_name}&a！"
+  already_active: "&c礼包 {gift_name} &c已经是当前使用的礼包！"
+  fail_money: "&c金币不足，需要 {price} 金币"
+  fail_points: "&c点券不足，需要 {price} 点券"
+  no_permission: "&c您是新玩家，暂时无法购买礼包"
+
+# 里程碑
 milestone:
-  reached: "&a恭喜！你达到了 {name} 里程碑，获得奖励！"
+  unlocked: "&a{name} 里程碑已解锁！请前往菜单领取奖励！"
   already_claimed: "&c你已经领取过此里程碑奖励"
   claim_success: "&a已领取 {name} 里程碑奖励"
   not_unlocked: "&c{name} 里程碑未解锁，还需要邀请 {remaining} 人"
-  unlocked: "&a{name} 里程碑已解锁！请前往菜单领取奖励！"
 
+# 充值返点
+points_rebate:
+  claim_success: "&a成功领取 &e{amount} &a点券返利，已计入贡献返点余额！"
+  claim_empty: "&7当前没有可领取的返点"
+  claim_blocked_cash: "&c现金模式的返利无法自行领取，请联系管理员线下发放"
+  rebate_pending_notify: "&a您获得了 &e{rebate_amount} &a点券返利（{player} 充值），未自动到账，请到主菜单「充值返利」手动领取"
+  mode_tag_points: "（点券模式）"
+  mode_tag_cash: "（现金模式）"
+
+# 权限组奖励
 permission_group_reward:
   money: "&a你邀请的玩家 &e{player} &a升级到了 &6{group}&a，你获得了 &e{money} &a金币奖励！"
   points: "&a你邀请的玩家 &e{player} &升级到了 &6{group}&a，你获得了 &e{points} &a点券奖励！"
   offline_money: "&a你邀请的玩家 &e{player} &a升级到了 &6{group}&a，你获得了 &e{money} &a金币奖励（离线）！"
   offline_points: "&a你邀请的玩家 &e{player} &a升级到了 &6{group}&a，你获得了 &e{points} &a点券奖励（离线）！"
 
-dialog:
-  cancel: "&c已取消邀请码输入"
-  timeout: "&c输入超时，请重新点击按钮"
-  prompt: "&a请输入邀请码（输入 {cancel_key} 取消）"
-  success: "&a邀请码验证成功！你获得了奖励"
-  fail: "&c邀请码无效"
-  ip_limit: "&c你的 IP 已被其他玩家使用过邀请码"
-  self_invite: "&c你不能使用自己的邀请码"
-
+# 同 IP 绑定功能限制
 function_restrictions:
-  # 绑定成功时的功能权限提示
-  bind_success_full: "&a✅ 绑定成功！你将获得所有功能权限"
-  bind_success_limited: "&a✅ 绑定成功！但由于同IP限制："
-  bind_success_milestone_enabled: "&7✅ 你的绑定将使老玩家解锁里程碑进度"
-  bind_success_milestone_disabled: "&7❌ 你的绑定将无法使老玩家解锁里程碑进度"
-  bind_success_rebate_enabled: "&7✅ 你的充值将使老玩家获得返点"
-  bind_success_rebate_disabled: "&7❌ 你的充值将无法使老玩家获得返点"
+  bind_success_full: "&7✅ 你将获得全部功能权限"
+  bind_success_limited: "&7✅ 绑定成功！但由于 IP 限制："
+  bind_success_milestone_enabled: "&7✅ 你将获得里程碑功能"
+  bind_success_milestone_disabled: "&7❌ 你将无法获得里程碑功能"
+  bind_success_rebate_enabled: "&7✅ 你将获得充值返点功能"
+  bind_success_rebate_disabled: "&7❌ 你将无法获得充值返点功能"
   bind_success_gift_enabled: "&7✅ 你将获得新玩家礼包"
   bind_success_gift_disabled: "&7❌ 你将无法获得新玩家礼包"
-  
-  # 绑定失败提示（IP限制启用时）
   bind_failed_ip_restriction: "&c❌ 绑定失败！同IP绑定已被限制，请联系管理员"
+
+# 菜单渲染文案
+menu:
+  page:
+    prev_hint: "&7• &a鼠标左键 &a➤ &f上一页"
+    next_hint: "&7• &a鼠标左键 &a➤ &f下一页"
+    first_page: "&7• &8已经是第一页"
+    last_page: "&7• &8已经是最后一页"
+  status:
+    locked: "未解锁"
+    available: "可领取"
+    claimed: "已领取"
+  reward:
+    none: "&7▸ 暂无奖励"
+    money: "&a▸ &7金币: &e{value}"
+    points: "&b▸ &7点券: &e{value}"
+    item: "&e▸ &7物品: &f{value}"
+    command: "&f▸ &7命令: &f{value}"
+    other: "&7▸ {type}: {value}"
+  duration:
+    permanent: "永久"
+    days: "{value}天"
+  rebate:
+    date_format: "yyyy年M月d日 HH:mm"
+    record_text: "&7为你提供了 &e{value} &7点券返利"
+    empty_title: "&e暂无返利记录"
+    empty: "&7你获得的返利会记录在这里"

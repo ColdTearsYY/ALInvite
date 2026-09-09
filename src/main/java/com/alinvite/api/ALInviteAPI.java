@@ -5,7 +5,7 @@ import com.alinvite.manager.GiftManager;
 import com.alinvite.manager.MilestoneManager;
 import com.alinvite.manager.PointsRebateManager;
 import com.alinvite.manager.LeaderboardManager;
-import com.alinvite.utils.SchedulerUtils;
+import com.alinvite.utils.AsyncPool;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -20,6 +20,11 @@ public final class ALInviteAPI {
 
     private ALInviteAPI() {}
 
+    /** 获取插件实例。 */
+    public static ALInvite getPlugin() {
+        return plugin;
+    }
+
     public static void init(ALInvite plugin) {
         ALInviteAPI.plugin = plugin;
     }
@@ -29,16 +34,8 @@ public final class ALInviteAPI {
     }
 
     public static CompletableFuture<String> getInviteCode(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
-            String code = plugin.getCacheManager().getInviteCode(uuid);
-            if (code == null) {
-                code = plugin.getDatabaseManager().getInviteCodeByPlayer(uuid).join();
-                if (code != null) {
-                    plugin.getCacheManager().setInviteCode(uuid, code);
-                }
-            }
-            return code;
-        });
+        return AsyncPool.supply(() -> plugin.getCacheManager().getInviteCode(uuid,
+                plugin.getDatabaseManager()::getInviteCodeByPlayerSync));
     }
 
     public static CompletableFuture<Integer> getTotalInvites(Player player) {
@@ -46,14 +43,12 @@ public final class ALInviteAPI {
     }
 
     public static CompletableFuture<Integer> getTotalInvites(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
-            Integer total = plugin.getCacheManager().getStats(uuid);
-            if (total == null) {
-                var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                total = data != null ? data.totalInvites : 0;
-                plugin.getCacheManager().setStats(uuid, total);
-            }
-            return total;
+        return AsyncPool.supply(() -> {
+            Integer total = plugin.getCacheManager().getStats(uuid, id -> {
+                var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                return data != null ? data.totalInvites : 0;
+            });
+            return total == null ? 0 : total;
         });
     }
 
@@ -62,16 +57,8 @@ public final class ALInviteAPI {
     }
 
     public static CompletableFuture<String> getPurchasedGift(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
-            String giftId = plugin.getCacheManager().getGiftId(uuid);
-            if (giftId == null) {
-                giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-                if (giftId != null) {
-                    plugin.getCacheManager().setGiftId(uuid, giftId);
-                }
-            }
-            return giftId;
-        });
+        return AsyncPool.supply(() -> plugin.getCacheManager().getGiftId(uuid,
+                plugin.getDatabaseManager()::getGiftIdSync));
     }
 
     public static CompletableFuture<GiftManager.GiftConfig> getActiveGift(Player player) {
@@ -79,9 +66,7 @@ public final class ALInviteAPI {
     }
 
     public static CompletableFuture<GiftManager.GiftConfig> getActiveGift(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
-            String giftId = getPurchasedGift(uuid).join();
-
+        return getPurchasedGift(uuid).thenApply(giftId -> {
             if (giftId == null) {
                 boolean requireGift = plugin.getConfigManager().getConfig()
                     .getBoolean("new_player_reward.require_gift", false);
@@ -97,7 +82,7 @@ public final class ALInviteAPI {
     }
 
     public static CompletableFuture<Boolean> isSameIp(Player p1, Player p2) {
-        return CompletableFuture.supplyAsync(() -> {
+        return AsyncPool.supply(() -> {
             if (p1 == null || p2 == null) {
                 return false;
             }
@@ -108,7 +93,7 @@ public final class ALInviteAPI {
     }
 
     public static CompletableFuture<List<UUID>> getInvitees(UUID inviterUuid) {
-        return CompletableFuture.supplyAsync(() -> {
+        return AsyncPool.supply(() -> {
             List<UUID> result = new ArrayList<>();
             return result;
         });
@@ -171,9 +156,25 @@ public final class ALInviteAPI {
         return plugin.getMenuManager().getPlaceholderResolver().applyPlaceholdersAsync(text, player);
     }
 
+    private static final java.util.List<InviteSuccessListener> SUCCESS_LISTENERS =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** 注册邀请成功监听器（回调在全局线程触发）。 */
     public static void registerInviteListener(InviteSuccessListener listener) {
-        SchedulerUtils.runTaskLater(plugin, () -> {
-        }, 1L);
+        if (listener != null && !SUCCESS_LISTENERS.contains(listener)) {
+            SUCCESS_LISTENERS.add(listener);
+        }
+    }
+
+    /** 内部使用：邀请成功时分发到已注册监听器。 */
+    public static void fireInviteSuccess(UUID inviterUuid, UUID inviteeUuid) {
+        for (InviteSuccessListener listener : SUCCESS_LISTENERS) {
+            try {
+                listener.onInviteSuccess(inviterUuid, inviteeUuid);
+            } catch (Exception e) {
+                plugin.getLogger().warning("InviteSuccessListener 回调异常: " + e.getMessage());
+            }
+        }
     }
 
     @FunctionalInterface
@@ -211,6 +212,15 @@ public final class ALInviteAPI {
     }
 
     /**
+     * 带流水键的充值处理：相同 transactionKey 的重复推送只会发放一次返利
+     * （流水占用记录在 points_rebate 表，跨服务器共享数据库时同样生效）。
+     */
+    public static CompletableFuture<Boolean> processPointsRecharge(
+            String operator, String targetPlayer, double amount, boolean skipRebate, String transactionKey) {
+        return plugin.getPointsRebateManager().processRecharge(operator, targetPlayer, amount, skipRebate, transactionKey);
+    }
+
+    /**
      * 获取玩家累计返点总额
      * @param player 玩家对象
      * @return CompletableFuture<Double> 累计返点总额
@@ -225,10 +235,7 @@ public final class ALInviteAPI {
      * @return CompletableFuture<Double> 累计返点总额
      */
     public static CompletableFuture<Double> getTotalRebateAmount(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> {
-            // 从数据库获取累计返点总额
-            return plugin.getDatabaseManager().getTotalRebateAmount(uuid).join();
-        });
+        return plugin.getDatabaseManager().getTotalRebateAmount(uuid);
     }
 
     /**
@@ -238,10 +245,120 @@ public final class ALInviteAPI {
      * @return CompletableFuture<Boolean> 是否为重复交易
      */
     public static CompletableFuture<Boolean> checkRebateDuplicate(UUID playerUuid, double amount) {
-        return CompletableFuture.supplyAsync(() -> {
-            // 检查数据库中是否存在相同交易记录
-            return plugin.getDatabaseManager().checkRebateDuplicate(playerUuid, amount).join();
+        return plugin.getDatabaseManager().checkRebateDuplicate(playerUuid, amount);
+    }
+
+    // ==================== 数据查询扩展（2.0.0 新增） ====================
+
+    /** 获取玩家未领取的返点数量（手动领取制下的待领取池）。 */
+    public static CompletableFuture<Double> getUnclaimedRebate(UUID uuid) {
+        return plugin.getDatabaseManager().getUnclaimedRebate(uuid);
+    }
+
+    /** 获取玩家贡献返点余额（别名，与 getTotalRebateAmount 语义区分）。 */
+    public static CompletableFuture<Double> getContribution(UUID uuid) {
+        return plugin.getDatabaseManager().getContributionAmount(uuid);
+    }
+
+    /** 获取已领取的里程碑所需人数集合（如 [1, 5, 10]）。 */
+    public static CompletableFuture<java.util.Set<Integer>> getClaimedMilestones(UUID uuid) {
+        return AsyncPool.supply(() -> {
+            String raw = plugin.getDatabaseManager().getClaimedMilestonesSync(uuid);
+            java.util.Set<Integer> result = new java.util.HashSet<>();
+            if (raw == null || raw.isBlank() || raw.equals("[]")) {
+                return result;
+            }
+            for (String part : raw.replace("[", "").replace("]", "").replace("\"", "").split(",")) {
+                String trimmed = part.trim();
+                if (trimmed.isEmpty()) continue;
+                try {
+                    result.add(Integer.parseInt(trimmed));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return result;
         });
+    }
+
+    /** 查询指定里程碑是否已领取。 */
+    public static CompletableFuture<Boolean> hasClaimedMilestone(UUID uuid, int required) {
+        return getClaimedMilestones(uuid).thenApply(set -> set.contains(required));
+    }
+
+    /** 获取待领取里程碑列表（邀请人离线期间达成的）。 */
+    public static CompletableFuture<List<String>> getPendingMilestones(UUID uuid) {
+        return plugin.getDatabaseManager().getPendingMilestones(uuid);
+    }
+
+    /** 返利记录条目。 */
+    public record RebateEntry(long time, double amount, String sourcePlayer) {
+    }
+
+    /** 获取最近的返利记录（时间倒序）。 */
+    public static CompletableFuture<List<RebateEntry>> getRebateRecords(UUID uuid, int limit) {
+        return plugin.getDatabaseManager().getRebateRecords(uuid, limit).thenApply(list -> {
+            List<RebateEntry> result = new ArrayList<>();
+            for (var r : list) {
+                result.add(new RebateEntry(r.createdAt(), r.amount(), r.sourceName()));
+            }
+            return result;
+        });
+    }
+
+    /** 获取礼包剩余天数（无期限返回 -1，已过期返回 0）。 */
+    public static CompletableFuture<Integer> getGiftRemainingDays(UUID uuid) {
+        return plugin.getGiftManager().getGiftRemainingDays(uuid);
+    }
+
+    /** 获取礼包状态文本：未购买 / 已购买 / 已过期 / 永久。 */
+    public static CompletableFuture<String> getGiftStatus(UUID uuid) {
+        return plugin.getPlaceholderResolver().getGiftStatusAsync(uuid);
+    }
+
+    /** 获取下一个未达成里程碑的所需人数（全部达成返回 "MAX"）。 */
+    public static CompletableFuture<String> getNextMilestone(UUID uuid) {
+        return plugin.getPlaceholderResolver().getNextMilestoneAsync(uuid);
+    }
+
+    /** 获取下一个未达成里程碑的名称（全部达成返回 "MAX"）。 */
+    public static CompletableFuture<String> getNextMilestoneName(UUID uuid) {
+        return plugin.getPlaceholderResolver().getNextMilestoneAsync(uuid).thenApply(num -> {
+            if ("MAX".equals(num)) {
+                return "MAX";
+            }
+            try {
+                var milestone = plugin.getMilestoneManager().getMilestone(Integer.parseInt(num));
+                return milestone != null ? milestone.name : num;
+            } catch (NumberFormatException e) {
+                return num;
+            }
+        });
+    }
+
+    /**
+     * 获取玩家当前充值返点比例（如 0.15 表示 15%）。
+     * 返回负值表示贡献模式（只记录不即时发放点券），绝对值为比例。
+     * 无匹配权限组时返回基础比例。
+     */
+    public static double getRebateRate(Player player) {
+        return plugin.getPointsRebateManager().getRebateRate(player);
+    }
+
+    /** 返点比例的展示文本（如 "15%" / "20%（贡献模式）"）。 */
+    public static String getRebateRateDisplay(Player player) {
+        return plugin.getPointsRebateManager().getRebateRateDisplay(player);
+    }
+
+    // ==================== 服务器标识（2.0.0 新增） ====================
+
+    /** 本服唯一 ID（config.yml serverid）。 */
+    public static String getServerId() {
+        return plugin.getConfigManager().getServerId();
+    }
+
+    /** 服务器别称（config.yml serverName）。 */
+    public static String getServerAlias() {
+        return plugin.getConfigManager().getServerAlias();
     }
 
     // ==================== 排行榜系统 API ====================

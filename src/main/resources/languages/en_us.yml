@@ -4,61 +4,7 @@
 
 prefix: "&6[Invite System] &r"
 
-commands:
-  reload: "&aConfiguration reloaded"
-  code: "&aYour invite code: &e{invite_code}"
-  stats: |
-    &a========== Invite Stats ==========
-    &aYour invite code: &e{invite_code}
-    &7Total invites: &e{total}
-    &7Claimed milestones: &e{claimed_milestones}
-    &7Current gift: &e{gift_name}
-  buygift:
-    success: "&aSuccessfully purchased gift {gift_name}&a! New players you invite will now receive this gift."
-    switch_success: "&aSuccessfully switched to gift {gift_name}&a!"
-    already_active: "&cGift {gift_name} &cis already your active gift!"
-    fail_money: "&cInsufficient gold, need {price} gold"
-    fail_points: "&cInsufficient points, need {price} points"
-    already_owned: "&cYou already own this gift"
-    no_permission: "&cYou are a new player, you cannot purchase gifts yet"
-  admin:
-    help: |
-      &6===== ALInvite Admin Commands =====
-      &e/alinvite admin help &7- Show help information
-      &e/alinvite admin reload &7- Reload plugin config
-      &e/alinvite admin givecode <player> &7- Generate invite code
-      &e/alinvite admin clearcode <player> &7- Clear player invite code
-      &e/alinvite admin addinvite <player> <amount> &7- Add invite count
-      &e/alinvite admin reset <player> &7- Reset player data
-      &e/alinvite admin announce <player> <milestone> &7- Send announcement
-      &e/alinvite admin checkgroup <player> &7- Check permission group rewards
-      &e/alinvite admin contrib <player> &7- View contribution rebate
-      &e/alinvite admin contrib add <player> <amount> &7- Add contribution rebate
-      &e/alinvite admin contrib set <player> <amount> &7- Set contribution rebate
-      &e/alinvite admin contrib deduct <player> <amount> &7- Deduct contribution rebate
-      &e/alinvite admin contrib clear <player> &7- Clear contribution rebate
-      &e/alinvite admin contrib h <player> <amount> &7- Exchange contribution rebate
-      &e/alinvite givedj <player> <amount> &7- Recharge points for player
-      &6============================
-    givecode_success: "&aGenerated invite code {invite_code} for player {player}"
-    clearcode_success: "&aCleared invite code for player {player}"
-    addinvite_success: "&aAdded {amount} invites for player {player}"
-    reset_success: "&aReset invite data for player {player}"
-    announce_success: "&aAnnouncement sent"
-    contribution_deducted: "&aDeducted contribution rebate from player {player}: {amount} points"
-    contribution_exchanged: "&aExchanged contribution rebate for player {player}: {amount} points issued"
-    contribution_exchange_failed: "&aDeducted contribution rebate from player {player}: {amount} points, but points issuance failed"
-    contribution_player_exchanged: "&aYou spent contribution rebate: {amount}, exchanged for points: {amount} points"
-    contribution_player_deducted: "&aYour contribution rebate has been deducted: {amount} points"
-  help: |
-    &6===== ALInvite Commands =====
-    &e/alinvite &7- Open invite menu
-    &e/alinvite bind &7- Input invite code to bind
-    &e/alinvite code &7- View your invite code
-    &e/alinvite stats &7- View invite stats
-    &6===== ALInvite Admin Commands =====
-    &e/alinvite admin &7- Admin commands help
-
+# Errors
 errors:
   player_only: "&cOnly players can execute this command"
   no_permission: "&cYou don't have permission"
@@ -69,35 +15,110 @@ errors:
   no_invite_code: "&cYou have not unlocked the invite code yet"
   inviter_limit_reached: "&cThe owner of this invite code has reached the maximum invite limit"
 
+# Commands
+commands:
+  reload: "&aConfiguration reloaded"
+  code: "&aYour invite code: &e{invite_code}"
+  # Multi-line messages: write as a list, one entry per line
+  stats:
+    - "&a========== Invite Stats =========="
+    - "&aYour invite code: &e{invite_code}"
+    - "&7Total invites: &e{total}"
+    - "&7Claimed milestones: &e{claimed_milestones}"
+    - "&7Current gift: &e{gift_name}"
+  help:
+    - "&6===== ALInvite Commands ====="
+    - "&e/alinvite &7- Open invite menu"
+    - "&e/alinvite bind &7- Input invite code to bind"
+    - "&e/alinvite code &7- View your invite code"
+    - "&e/alinvite stats &7- View invite stats"
+    - "&6===== ALInvite Admin Commands ====="
+    - "&e/alinvite admin &7- Admin commands help"
+  buygift:
+    success: "&aSuccessfully purchased gift {gift_name}&a! New players you invite will now receive this gift."
+    switch_success: "&aSuccessfully switched to gift {gift_name}&a!"
+    already_active: "&cGift {gift_name} &cis already your active gift!"
+    fail_money: "&cInsufficient gold, need {price} gold"
+    fail_points: "&cInsufficient points, need {price} points"
+    no_permission: "&cYou are a new player, you cannot purchase gifts yet"
+  admin:
+    help:
+      - "&6===== ALInvite Admin Commands ====="
+      - "&e/alinvite admin help &7- Show help information"
+      - "&e/alinvite admin reload &7- Reload plugin config"
+      - "&e/alinvite admin givecode <player> &7- Generate invite code"
+      - "&e/alinvite admin clearcode <player> &7- Clear player invite code"
+      - "&e/alinvite admin addinvite <player> <amount> &7- Add invite count"
+      - "&e/alinvite admin reset <player> &7- Reset player data"
+      - "&e/alinvite admin announce <player> <milestone> &7- Send announcement"
+      - "&e/alinvite admin rebate <player> &7- Open the player's rebate history menu"
+      - "&e/alinvite admin unclaimed <player> &7- View unclaimed rebate balance"
+      - "&e/alinvite admin unclaimed clear <player> &7- Write off unclaimed rebate (after offline payout)"
+      - "&e/alinvite admin checkgroup <player> &7- Check permission group rewards"
+      - "&e/alinvite admin contrib <player> &7- View contribution rebate"
+      - "&e/alinvite admin contrib add <player> <amount> &7- Add contribution rebate"
+      - "&e/alinvite admin contrib set <player> <amount> &7- Set contribution rebate"
+      - "&e/alinvite admin contrib deduct <player> <amount> &7- Deduct contribution rebate"
+      - "&e/alinvite admin contrib clear <player> &7- Clear contribution rebate"
+      - "&e/alinvite admin contrib h <player> <amount> &7- Exchange contribution rebate"
+      - "&e/alinvite givedj <player> <amount> &7- Recharge points for player"
+      - "&6============================"
+    givecode_success: "&aGenerated invite code {invite_code} for player {player}"
+    clearcode_success: "&aCleared invite code for player {player}"
+    addinvite_success: "&aAdded {amount} invites for player {player}"
+    reset_success: "&aReset invite data for player {player}"
+    announce_success: "&aAnnouncement sent"
+    contribution_deducted: "&aDeducted contribution rebate from player {player}: {amount} points"
+    contribution_exchanged: "&aExchanged contribution rebate for player {player}: {amount} points issued"
+    contribution_exchange_failed: "&aDeducted contribution rebate from player {player}: {amount} points, but points issuance failed"
+    contribution_player_exchanged: "&aYou spent contribution rebate: {amount}, exchanged for points: {amount} points"
+    contribution_player_deducted: "&aYour contribution rebate has been deducted: {amount} points"
 
-points_rebate:
-  rebate_given: "&aNew player &e{player}&a you invited recharged &6{amount}&a points, you received &e{rebate_amount}&a points rebate!"
-  contribution_rebate_recorded: "&aNew player &e{player}&a you invited recharged &6{amount}&a points, you received &e{rebate_amount}&a contribution rebate (recorded)!"
+# Dialog
+dialog:
+  prompt: "&aPlease enter invite code (press {cancel_key} to cancel)"
+  success: "&aInvite code verified! You received rewards"
+  fail: "&cInvalid invite code"
+  empty_code: "&cInvite code cannot be empty!"
+  timeout: "&cInput timeout, please click the button again"
+  cancel: "&cCancelled invite code input"
+  ip_limit: "&cYour IP has been used by another player for invite code"
+  self_invite: "&cYou cannot use your own invite code"
 
+# Gift shop
+buygift:
+  success: "&aSuccessfully purchased gift {gift_name}&a! New players you invite will now receive this gift."
+  switch_success: "&aSuccessfully switched to gift {gift_name}&a!"
+  already_active: "&cGift {gift_name} &cis already your active gift!"
+  fail_money: "&cInsufficient gold, need {price} gold"
+  fail_points: "&cInsufficient points, need {price} points"
+  no_permission: "&cYou are a new player, you cannot purchase gifts yet"
+
+# Milestones
 milestone:
-  reached: "&aCongratulations! You've reached {name} milestone and received rewards!"
   already_claimed: "&cYou have already claimed this milestone reward"
   claim_success: "&aClaimed {name} milestone reward"
   not_unlocked: "&c{name} milestone is locked. You need to invite {remaining} more players"
   unlocked: "&a{name} milestone unlocked! Please claim your reward in the menu!"
 
+# Recharge rebate
+points_rebate:
+  claim_success: "&aClaimed &e{amount} &arebate points! Added to your contribution balance."
+  claim_empty: "&7You have no pending rebates to claim"
+  claim_blocked_cash: "&cCash-mode rebates cannot be claimed in-game. Contact an admin for an offline payout."
+  rebate_pending_notify: "&aYou received &e{rebate_amount} &arebate points ({player} recharged). It is NOT credited automatically - claim it via &eRebate Center &ain the main menu"
+  mode_tag_points: " (points mode)"
+  mode_tag_cash: " (cash mode)"
+
+# Permission group rewards
 permission_group_reward:
   money: "&aPlayer &e{player} &ayou invited upgraded to &6{group}&a, you received &e{money} &agold reward!"
   points: "&aPlayer &e{player} &ayou invited upgraded to &6{group}&a, you received &e{points} &apoints reward!"
   offline_money: "&aPlayer &e{player} &ayou invited upgraded to &6{group}&a, you received &e{money} &agold reward (offline)!"
   offline_points: "&aPlayer &e{player} &ayou invited upgraded to &6{group}&a, you received &e{points} &apoints reward (offline)!"
 
-dialog:
-  cancel: "&cCancelled invite code input"
-  timeout: "&cInput timeout, please click the button again"
-  prompt: "&aPlease enter invite code (press {cancel_key} to cancel)"
-  success: "&aInvite code verified! You received rewards"
-  fail: "&cInvalid invite code"
-  ip_limit: "&cYour IP has been used by another player for invite code"
-  self_invite: "&cYou cannot use your own invite code"
-
+# Function restrictions (same IP bind)
 function_restrictions:
-  # 绑定成功时的功能权限提示
   bind_success_full: "&a✅ Bind successful! You will get all function permissions"
   bind_success_limited: "&a✅ Bind successful! But due to IP restrictions:"
   bind_success_milestone_enabled: "&7✅ Your bind will allow the veteran player to unlock milestone progress"
@@ -106,6 +127,31 @@ function_restrictions:
   bind_success_rebate_disabled: "&7❌ Your recharge will not allow the veteran player to receive rebate"
   bind_success_gift_enabled: "&7✅ You will receive the new player gift"
   bind_success_gift_disabled: "&7❌ You will not receive the new player gift"
-  
-  # Bind failure prompt (when IP restriction is enabled)
   bind_failed_ip_restriction: "&c❌ Bind failed! Same IP binding has been restricted, please contact administrator"
+
+# Menu rendering texts
+menu:
+  page:
+    prev_hint: "&7• &aLeft click &a➤ &fPrevious page"
+    next_hint: "&7• &aLeft click &a➤ &fNext page"
+    first_page: "&7• &8Already on the first page"
+    last_page: "&7• &8Already on the last page"
+  status:
+    locked: "Locked"
+    available: "Ready to claim"
+    claimed: "Claimed"
+  reward:
+    none: "&7▸ No rewards"
+    money: "&a▸ &7Money: &e{value}"
+    points: "&b▸ &7Points: &e{value}"
+    item: "&e▸ &7Item: &f{value}"
+    command: "&f▸ &7Command: &f{value}"
+    other: "&7▸ {type}: {value}"
+  duration:
+    permanent: "Permanent"
+    days: "{value} days"
+  rebate:
+    date_format: "MMM d, yyyy HH:mm"
+    record_text: "&7You received &e{value} &7rebate points"
+    empty_title: "&eNo rebate records"
+    empty: "&7Your rebates will be listed here"

@@ -1,0 +1,119 @@
+# ALInvite gift shop menu (English)
+
+config_version: 1
+
+shop_menu:
+  title: "&b&lGift Shop"
+  shape:
+    - "####T####"
+    - "#GGGGGGG#"
+    - "#GGGGGGG#"
+    - "#GGGGGGG#"
+    - "#GGGGGGG#"
+    - "P##H#R##N"
+  items:
+    T:
+      material: 'NAME_TAG'
+      custom_model_data: 0
+      name: "&b&lGift Shop"
+      lore:
+        - "&6▶ &8About this menu"
+        - "&e▸ &7Buy gifts to boost newcomer rewards for players you invite"
+        - "&a▸ &7Owned gifts can be switched at any time"
+        - ""
+        - "&e▸ &7Current gift: &f%gift_name%"
+        - "&a▸ &7Remaining: &f%gift_remaining_days%"
+    G:
+      dynamic: true
+      material: "{material}"
+      custom_model_data: 0
+      name: "&b&l%gift_name%"
+      lore:
+        - "&6▶ &8Price"
+        - "&6▸ &7Money: &e%price_money%"
+        - "&6▸ &7Points: &e%price_points%"
+        - "&a▸ &7Duration: &f%duration_text%"
+        - ""
+        - "&6▶ &8Gift Contents"
+        - "%reward_lore%"
+        - ""
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fBuy this gift"
+      states:
+        current:
+          material: 'NETHER_STAR'
+          name: "&6&l%gift_name% &e(In use)"
+          lore:
+            - "&6▶ &8Price"
+            - "&6▸ &7Money: &e%price_money%"
+            - "&6▸ &7Points: &e%price_points%"
+            - "&a▸ &7Duration: &f%duration_text%"
+            - "&a▸ &7Status: &a✔ Currently active"
+            - ""
+            - "&6▶ &8Gift Contents"
+            - "%reward_lore%"
+        purchased:
+          material: 'NETHER_STAR'
+          name: "&a&l%gift_name% &a(Owned)"
+          lore:
+            - "&6▶ &8Price"
+            - "&6▸ &7Money: &e%price_money%"
+            - "&6▸ &7Points: &e%price_points%"
+            - "&a▸ &7Duration: &f%duration_text%"
+            - "&a▸ &7Status: &a✔ Owned"
+            - ""
+            - "&6▶ &8Gift Contents"
+            - "%reward_lore%"
+            - ""
+            - "&6▶ &8Actions"
+            - "&7• &aLeft click &a➤ &fSwitch to this gift"
+      triggers:
+        left:
+          - 'buy_gift:%gift_id%'
+    H:
+      material: 'OAK_DOOR'
+      custom_model_data: 0
+      name: "&a&lBack to Main Menu"
+      lore:
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fReturn to the main menu"
+      triggers:
+        left:
+          - 'open_main'
+    R:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&lBack"
+      lore:
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fReturn to the previous menu"
+      triggers:
+        left:
+          - 'back'
+    P:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&lPrevious Page"
+      lore:
+        - "&6▶ &8Pagination"
+        - "&e▸ &7Page: &e%page%&7/&f%total_pages%"
+        - "%prev_page_hint%"
+      triggers:
+        left:
+          - 'prev_page'
+    N:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&lNext Page"
+      lore:
+        - "&6▶ &8Pagination"
+        - "&e▸ &7Page: &e%page%&7/&f%total_pages%"
+        - "%next_page_hint%"
+      triggers:
+        left:
+          - 'next_page'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '

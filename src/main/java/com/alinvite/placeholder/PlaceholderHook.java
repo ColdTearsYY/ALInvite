@@ -42,33 +42,25 @@ public class PlaceholderHook extends PlaceholderExpansion {
 
         switch (params.toLowerCase()) {
             case "code" -> {
-                String code = plugin.getCacheManager().getInviteCode(uuid);
-                if (code == null) {
-                    code = plugin.getDatabaseManager().getInviteCodeByPlayer(uuid).join();
-                    if (code != null) {
-                        plugin.getCacheManager().setInviteCode(uuid, code);
-                    }
-                }
+                String code = plugin.getCacheManager().getInviteCode(uuid,
+                        plugin.getDatabaseManager()::getInviteCodeByPlayerSync);
                 return code != null ? code : "N/A";
             }
 
             case "total" -> {
-                Integer total = plugin.getCacheManager().getStats(uuid);
-                if (total == null) {
-                    var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                    total = data != null ? data.totalInvites : 0;
-                    plugin.getCacheManager().setStats(uuid, total);
-                }
+                Integer total = plugin.getCacheManager().getStats(uuid, id -> {
+                    var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                    return data != null ? data.totalInvites : 0;
+                });
                 return String.valueOf(total);
             }
 
             case "next_milestone" -> {
                 Map<Integer, MilestoneManager.Milestone> milestones = plugin.getMilestoneManager().getMilestones();
-                Integer currentTotal = plugin.getCacheManager().getStats(uuid);
-                if (currentTotal == null) {
-                    var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                    currentTotal = data != null ? data.totalInvites : 0;
-                }
+                Integer currentTotal = plugin.getCacheManager().getStats(uuid, id -> {
+                    var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                    return data != null ? data.totalInvites : 0;
+                });
 
                 for (Map.Entry<Integer, MilestoneManager.Milestone> entry : milestones.entrySet()) {
                     if (entry.getKey() > currentTotal) {
@@ -80,11 +72,10 @@ public class PlaceholderHook extends PlaceholderExpansion {
 
             case "next_milestone_name" -> {
                 Map<Integer, MilestoneManager.Milestone> milestones = plugin.getMilestoneManager().getMilestones();
-                Integer currentTotal = plugin.getCacheManager().getStats(uuid);
-                if (currentTotal == null) {
-                    var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                    currentTotal = data != null ? data.totalInvites : 0;
-                }
+                Integer currentTotal = plugin.getCacheManager().getStats(uuid, id -> {
+                    var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                    return data != null ? data.totalInvites : 0;
+                });
 
                 for (Map.Entry<Integer, MilestoneManager.Milestone> entry : milestones.entrySet()) {
                     if (entry.getKey() > currentTotal) {
@@ -95,13 +86,8 @@ public class PlaceholderHook extends PlaceholderExpansion {
             }
 
             case "gift_name" -> {
-                String giftId = plugin.getCacheManager().getGiftId(uuid);
-                if (giftId == null) {
-                    giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-                    if (giftId != null) {
-                        plugin.getCacheManager().setGiftId(uuid, giftId);
-                    }
-                }
+                String giftId = plugin.getCacheManager().getGiftId(uuid,
+                        plugin.getDatabaseManager()::getGiftIdSync);
 
                 if (giftId == null) {
                     return "无";
@@ -112,18 +98,14 @@ public class PlaceholderHook extends PlaceholderExpansion {
             }
 
             case "has_gift" -> {
-                String giftId = plugin.getCacheManager().getGiftId(uuid);
-                if (giftId == null) {
-                    giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-                }
+                String giftId = plugin.getCacheManager().getGiftId(uuid,
+                        plugin.getDatabaseManager()::getGiftIdSync);
                 return giftId != null ? "true" : "false";
             }
 
             case "gift_status" -> {
-                String giftId = plugin.getCacheManager().getGiftId(uuid);
-                if (giftId == null) {
-                    giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-                }
+                String giftId = plugin.getCacheManager().getGiftId(uuid,
+                        plugin.getDatabaseManager()::getGiftIdSync);
                 
                 if (giftId == null) {
                     String defaultGiftId = plugin.getConfigManager().getConfig()
@@ -138,7 +120,8 @@ public class PlaceholderHook extends PlaceholderExpansion {
                 }
                 
                 // 使用新的 getGiftPurchaseTimeById 获取该礼包单独的购买时间
-                long purchaseTime = plugin.getDatabaseManager().getGiftPurchaseTimeById(uuid, giftId).join();
+                long purchaseTime = plugin.getCacheManager().getGiftPurchaseTime(uuid, giftId,
+                        (id, gid) -> plugin.getDatabaseManager().getGiftPurchaseTimeByIdSync(id, gid));
                 GiftManager.GiftConfig gift = plugin.getGiftManager().getGift(giftId);
                 if (gift == null) {
                     return "未购买";
@@ -163,10 +146,8 @@ public class PlaceholderHook extends PlaceholderExpansion {
             }
 
             case "gift_remaining_days" -> {
-                String giftId = plugin.getCacheManager().getGiftId(uuid);
-                if (giftId == null) {
-                    giftId = plugin.getDatabaseManager().getGiftId(uuid).join();
-                }
+                String giftId = plugin.getCacheManager().getGiftId(uuid,
+                        plugin.getDatabaseManager()::getGiftIdSync);
                 
                 if (giftId == null) {
                     String defaultGiftId = plugin.getConfigManager().getConfig()
@@ -181,7 +162,8 @@ public class PlaceholderHook extends PlaceholderExpansion {
                 }
                 
                 // 使用新的 getGiftPurchaseTimeById 获取该礼包单独的购买时间
-                long purchaseTime = plugin.getDatabaseManager().getGiftPurchaseTimeById(uuid, giftId).join();
+                long purchaseTime = plugin.getCacheManager().getGiftPurchaseTime(uuid, giftId,
+                        (id, gid) -> plugin.getDatabaseManager().getGiftPurchaseTimeByIdSync(id, gid));
                 GiftManager.GiftConfig gift = plugin.getGiftManager().getGift(giftId);
                 if (gift == null) {
                     return "未购买";
@@ -208,16 +190,18 @@ public class PlaceholderHook extends PlaceholderExpansion {
             }
 
             case "bind_status" -> {
-                UUID inviterUuid = plugin.getDatabaseManager().getInviter(uuid).join();
+                UUID inviterUuid = plugin.getCacheManager().getInviter(uuid,
+                        plugin.getDatabaseManager()::getInviterSync);
                 return inviterUuid != null ? "已绑定" : "未绑定";
             }
 
             case "inviter_name" -> {
-                UUID inviterUuid = plugin.getDatabaseManager().getInviter(uuid).join();
+                UUID inviterUuid = plugin.getCacheManager().getInviter(uuid,
+                        plugin.getDatabaseManager()::getInviterSync);
                 if (inviterUuid == null) {
                     return "无";
                 }
-                var data = plugin.getDatabaseManager().getPlayerData(inviterUuid).join();
+                var data = plugin.getDatabaseManager().getPlayerDataSync(inviterUuid);
                 if (data == null) {
                     return "无";
                 }
@@ -229,22 +213,19 @@ public class PlaceholderHook extends PlaceholderExpansion {
             }
 
             case "total_invites" -> {
-                Integer total = plugin.getCacheManager().getStats(uuid);
-                if (total == null) {
-                    var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                    total = data != null ? data.totalInvites : 0;
-                    plugin.getCacheManager().setStats(uuid, total);
-                }
+                Integer total = plugin.getCacheManager().getStats(uuid, id -> {
+                    var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                    return data != null ? data.totalInvites : 0;
+                });
                 return String.valueOf(total);
             }
 
             case "remaining_for_next_milestone" -> {
                 Map<Integer, MilestoneManager.Milestone> milestones = plugin.getMilestoneManager().getMilestones();
-                Integer currentTotal = plugin.getCacheManager().getStats(uuid);
-                if (currentTotal == null) {
-                    var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                    currentTotal = data != null ? data.totalInvites : 0;
-                }
+                Integer currentTotal = plugin.getCacheManager().getStats(uuid, id -> {
+                    var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                    return data != null ? data.totalInvites : 0;
+                });
 
                 for (Map.Entry<Integer, MilestoneManager.Milestone> entry : milestones.entrySet()) {
                     if (entry.getKey() > currentTotal) {
@@ -261,11 +242,10 @@ public class PlaceholderHook extends PlaceholderExpansion {
                         int milestoneNum = Integer.parseInt(milestoneKey);
                         MilestoneManager.Milestone milestone = plugin.getMilestoneManager().getMilestone(milestoneNum);
                         if (milestone != null) {
-                            Integer currentTotal = plugin.getCacheManager().getStats(uuid);
-                            if (currentTotal == null) {
-                                var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                                currentTotal = data != null ? data.totalInvites : 0;
-                            }
+                            Integer currentTotal = plugin.getCacheManager().getStats(uuid, id -> {
+                                var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                                return data != null ? data.totalInvites : 0;
+                            });
                             return currentTotal >= milestoneNum ? "true" : "false";
                         }
                     } catch (NumberFormatException ignored) {}
@@ -358,20 +338,21 @@ public class PlaceholderHook extends PlaceholderExpansion {
     private String getPlayerValue(UUID uuid, String valueType) {
         return switch (valueType.toLowerCase()) {
             case "invites" -> {
-                Integer total = plugin.getCacheManager().getStats(uuid);
-                if (total == null) {
-                    var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                    total = data != null ? data.totalInvites : 0;
-                }
+                Integer total = plugin.getCacheManager().getStats(uuid, id -> {
+                    var data = plugin.getDatabaseManager().getPlayerDataSync(id);
+                    return data != null ? data.totalInvites : 0;
+                });
                 yield String.valueOf(total);
             }
             case "contribution" -> {
-                var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                yield data != null ? String.valueOf(data.contributionAmount) : "0";
+                double contribution = plugin.getCacheManager().getContribution(uuid,
+                        plugin.getDatabaseManager()::getContributionAmountSync);
+                yield String.valueOf(contribution);
             }
             case "points" -> {
-                var data = plugin.getDatabaseManager().getPlayerData(uuid).join();
-                yield data != null ? String.valueOf((int) data.totalRebatePoints) : "0";
+                double rebate = plugin.getCacheManager().getTotalRebate(uuid,
+                        plugin.getDatabaseManager()::getTotalRebateAmountSync);
+                yield String.valueOf((int) rebate);
             }
             default -> "-";
         };

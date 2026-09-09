@@ -1,0 +1,122 @@
+# ALInvite 礼包商店菜单
+# G 为动态槽位：每个礼包按 available/purchased/current 状态套用样式。
+# material: "{material}" 表示使用礼包配置（config.yml gift_shop.gifts）中的材质。
+# R = 返回上个菜单，H = 返回主菜单，P/N = 翻页。
+
+config_version: 1
+
+shop_menu:
+  title: "&b&l礼包商店"
+  shape:
+    - "####T####"
+    - "#GGGGGGG#"
+    - "#GGGGGGG#"
+    - "#GGGGGGG#"
+    - "#GGGGGGG#"
+    - "P##H#R##N"
+  items:
+    T:
+      material: 'NAME_TAG'
+      custom_model_data: 0
+      name: "&b&l礼包商店"
+      lore:
+        - "&6▶ &8本菜单介绍"
+        - "&e▸ &7购买礼包后，你邀请的新玩家将获得更好的新手奖励"
+        - "&a▸ &7已购买的礼包可随时切换生效"
+        - ""
+        - "&e▸ &7当前礼包: &f%gift_name%"
+        - "&a▸ &7剩余有效期: &f%gift_remaining_days%"
+    G:
+      dynamic: true
+      material: "{material}"
+      custom_model_data: 0
+      name: "&b&l%gift_name%"
+      lore:
+        - "&6▶ &8礼包价格"
+        - "&6▸ &7金币: &e%price_money%"
+        - "&6▸ &7点券: &e%price_points%"
+        - "&a▸ &7有效期: &f%duration_text%"
+        - ""
+        - "&6▶ &8礼包内容"
+        - "%reward_lore%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f购买该礼包"
+      states:
+        current:
+          material: 'NETHER_STAR'
+          name: "&6&l%gift_name% &e(当前使用)"
+          lore:
+            - "&6▶ &8礼包价格"
+            - "&6▸ &7金币: &e%price_money%"
+            - "&6▸ &7点券: &e%price_points%"
+            - "&a▸ &7有效期: &f%duration_text%"
+            - "&a▸ &7状态: &a✔ 正在使用中"
+            - ""
+            - "&6▶ &8礼包内容"
+            - "%reward_lore%"
+        purchased:
+          material: 'NETHER_STAR'
+          name: "&a&l%gift_name% &a(已拥有)"
+          lore:
+            - "&6▶ &8礼包价格"
+            - "&6▸ &7金币: &e%price_money%"
+            - "&6▸ &7点券: &e%price_points%"
+            - "&a▸ &7有效期: &f%duration_text%"
+            - "&a▸ &7状态: &a✔ 已拥有"
+            - ""
+            - "&6▶ &8礼包内容"
+            - "%reward_lore%"
+            - ""
+            - "&6▶ &8操作"
+            - "&7• &a鼠标左键 &a➤ &f切换为当前礼包"
+      triggers:
+        left:
+          - 'buy_gift:%gift_id%'
+    H:
+      material: 'OAK_DOOR'
+      custom_model_data: 0
+      name: "&a&l返回主菜单"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f返回主菜单"
+      triggers:
+        left:
+          - 'open_main'
+    R:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l返回"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f返回上个菜单"
+      triggers:
+        left:
+          - 'back'
+    P:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l上一页"
+      lore:
+        - "&6▶ &8翻页"
+        - "&e▸ &7当前页: &e%page%&7/&f%total_pages%"
+        - "%prev_page_hint%"
+      triggers:
+        left:
+          - 'prev_page'
+    N:
+      material: 'ARROW'
+      custom_model_data: 0
+      name: "&a&l下一页"
+      lore:
+        - "&6▶ &8翻页"
+        - "&e▸ &7当前页: &e%page%&7/&f%total_pages%"
+        - "%next_page_hint%"
+      triggers:
+        left:
+          - 'next_page'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '

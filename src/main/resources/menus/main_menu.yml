@@ -1,0 +1,74 @@
+# ALInvite 主菜单
+# shape 每行 9 个字符：'#' 背景填充，' ' 空置，字母对应 items 中的按钮。
+# S = 充值返利（左键领取未领取返点 / 右键查看返利记录），X = 关闭菜单
+
+config_version: 1
+
+main_menu:
+  title: "&6&l邀请系统"
+  shape:
+    - "####S####"
+    - "#A#####B#"
+    - "####X####"
+  items:
+    S:
+      material: 'GOLD_INGOT'
+      custom_model_data: 0
+      name: "&6&l充值返利"
+      lore:
+        - "&6▶ &8返利概览"
+        - "&e▸ &7累计返点: &e%total_rebate% 点券"
+        - "&6▸ &7你的返利比例: &e%rebate_rate%"
+        - "&a▸ &7未领取: &a%unclaimed_rebate% 点券"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f领取未领取的返点"
+        - "&7• &e鼠标右键 &e➤ &f查看返利记录"
+      triggers:
+        left:
+          - 'claim_rebate'
+        right:
+          - 'open_rebate_history'
+    A:
+      material: 'WRITABLE_BOOK'
+      custom_model_data: 0
+      name: "&a&l填写邀请码"
+      lore:
+        - "&6▶ &8邀请码"
+        - "&e▸ &7绑定状态: &f%bind_status%"
+        - "&a▸ &7邀请人: &f%inviter_name%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f输入邀请码进行绑定"
+      triggers:
+        left:
+          - 'input_code'
+    B:
+      material: 'DIAMOND'
+      custom_model_data: 0
+      name: "&6&l邀请中心"
+      lore:
+        - "&6▶ &8邀请概览"
+        - "&e▸ &7我的邀请码: &e%invite_code%"
+        - "&a▸ &7累计邀请人数: &e%total_invites%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f打开邀请中心"
+      triggers:
+        left:
+          - 'open_veteran'
+    X:
+      material: 'BARRIER'
+      custom_model_data: 0
+      name: "&c关闭菜单"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f关闭菜单"
+      triggers:
+        left:
+          - 'close'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '
