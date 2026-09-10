@@ -104,6 +104,7 @@ milestone:
 # 充值返点
 points_rebate:
   claim_success: "&a成功领取 &e{amount} &a点券返利，已计入贡献返点余额！"
+  claim_success_command: "&a成功领取 &e{amount} &a点券返利，已发放到你的点券余额！"
   claim_empty: "&7当前没有可领取的返点"
   claim_blocked_cash: "&c现金模式的返利无法自行领取，请联系管理员线下发放"
   rebate_pending_notify: "&a您获得了 &e{rebate_amount} &a点券返利（{player} 充值），未自动到账，请到主菜单「充值返利」手动领取"

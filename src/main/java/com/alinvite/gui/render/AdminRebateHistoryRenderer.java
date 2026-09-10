@@ -56,11 +56,12 @@ public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHist
         open(admin);
     }
 
-    /** 切换视图（返利到账 ↔ 领取操作）。 */
+    /** 切换视图（返利到账 ↔ 领取操作）。页码归 1，两个视图的列表互不继承页码。 */
     public void toggleView(Player admin) {
         UUID uuid = admin.getUniqueId();
         Boolean current = claimViewToggle.get(uuid);
         claimViewToggle.put(uuid, !Boolean.TRUE.equals(current));
+        pages.set(uuid, menuName(), 1);
         refresh(admin);
     }
 
@@ -175,6 +176,11 @@ public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHist
             setItemSafe(inventory, slots.get(index),
                 MenuItems.build(plugin, pdc(), recordItem, recordState, itemContext));
             index++;
+        }
+
+        // 清空本页未占用的动态槽位（切视图或翻到较短页时移除残留条目）
+        for (int i = result.entries().size(); i < slots.size(); i++) {
+            setItemSafe(inventory, slots.get(i), null);
         }
 
         if (result.entries().isEmpty()) {
