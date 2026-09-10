@@ -23,8 +23,8 @@ admin_rebate_history:
         - "&a▸ &7Unclaimed: &a%unclaimed_rebate% points"
         - "&6▸ &7Rebate rate: &e%rebate_rate%"
         - ""
-        - "&6▶ &8Tips"
-        - "&7• &aManual write-off: &f/alinvite admin unclaimed clear <player>"
+        - "&6▶ &8Actions"
+        - "&7• &aWrite-off &a➤ &f/alinvite admin unclaimed clear <player>"
     R:
       dynamic: true
       material: 'PAPER'
@@ -33,7 +33,7 @@ admin_rebate_history:
       lore:
         - "&6▶ &8Rebate Received"
         - "&e▸ %record_text%"
-        - "&7Source player: &f%record_source%"
+        - "&e▸ &7Source player: &f%record_source%"
       states:
         claim:
           material: 'BOOK'
@@ -41,7 +41,7 @@ admin_rebate_history:
           lore:
             - "&b▶ &8Claim Record"
             - "&e▸ %record_text%"
-            - "&7Handled by: &f%record_source%"
+            - "&e▸ &7Handled by: &f%record_source%"
     A:
       material: 'LEVER'
       custom_model_data: 0

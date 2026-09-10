@@ -39,7 +39,7 @@ rebate_history:
       lore:
         - "&6▶ &8返利到账"
         - "&e▸ %record_text%"
-        - "&7来源玩家: &f%record_source%"
+        - "&e▸ &7来源玩家: &f%record_source%"
       states:
         claim:
           material: 'BOOK'
@@ -47,7 +47,7 @@ rebate_history:
           lore:
             - "&b▶ &8领取记录"
             - "&e▸ %record_text%"
-            - "&7经手人: &f%record_source%"
+            - "&e▸ &7经手人: &f%record_source%"
     A:
       material: 'LEVER'
       custom_model_data: 0

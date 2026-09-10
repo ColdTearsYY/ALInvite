@@ -35,7 +35,7 @@ rebate_history:
       lore:
         - "&6▶ &8Rebate Received"
         - "&e▸ %record_text%"
-        - "&7Source player: &f%record_source%"
+        - "&e▸ &7Source player: &f%record_source%"
       states:
         claim:
           material: 'BOOK'
@@ -43,7 +43,7 @@ rebate_history:
           lore:
             - "&b▶ &8Claim Record"
             - "&e▸ %record_text%"
-            - "&7Handled by: &f%record_source%"
+            - "&e▸ &7Handled by: &f%record_source%"
     A:
       material: 'LEVER'
       custom_model_data: 0

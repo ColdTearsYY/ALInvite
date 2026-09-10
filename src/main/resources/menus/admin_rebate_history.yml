@@ -26,8 +26,8 @@ admin_rebate_history:
         - "&a▸ &7未领取: &a%unclaimed_rebate% 点券"
         - "&6▸ &7返点比例: &e%rebate_rate%"
         - ""
-        - "&6▶ &8操作提示"
-        - "&7• &a主菜单命令核销: &f/alinvite admin unclaimed clear <玩家>"
+        - "&6▶ &8操作"
+        - "&7• &a命令核销 &a➤ &f/alinvite admin unclaimed clear <玩家>"
     R:
       dynamic: true
       material: 'PAPER'
@@ -36,7 +36,7 @@ admin_rebate_history:
       lore:
         - "&6▶ &8返利到账"
         - "&e▸ %record_text%"
-        - "&7来源玩家: &f%record_source%"
+        - "&e▸ &7来源玩家: &f%record_source%"
       states:
         claim:
           material: 'BOOK'
@@ -44,7 +44,7 @@ admin_rebate_history:
           lore:
             - "&b▶ &8领取记录"
             - "&e▸ %record_text%"
-            - "&7经手人: &f%record_source%"
+            - "&e▸ &7经手人: &f%record_source%"
     A:
       material: 'LEVER'
       custom_model_data: 0
