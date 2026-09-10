@@ -7,7 +7,7 @@
 config_version: 1
 
 rebate_history:
-  title: "&6&l返利记录"
+  title: "&6&l历史记录"
   shape:
     - "####T####"
     - "#RRRRRRR#"
@@ -19,9 +19,9 @@ rebate_history:
     T:
       material: 'NAME_TAG'
       custom_model_data: 0
-      name: "&6&l返利记录"
+      name: "&6&l历史记录"
       lore:
-        - "&6▶ &8本菜单介绍"
+        - "&6▶ &8介绍"
         - "&e▸ &7这里记录你获得的每一笔充值返利"
         - "&a▸ &7包括发放时间、金额与来源玩家"
         - ""
@@ -53,17 +53,21 @@ rebate_history:
       custom_model_data: 0
       name: "&e&l切换视图"
       lore:
-        - "&7当前视图: &e%view_name%"
+        - "&6▶ &8视图"
+        - "&e▸ &7当前视图: &e%view_name%"
         - ""
-        - "&7点击切换显示内容"
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       states:
         claim:
           material: 'REPEATER'
           name: "&b&l切换视图"
           lore:
-            - "&7当前视图: &b%view_name%"
+            - "&b▶ &8视图"
+            - "&b▸ &7当前视图: &b%view_name%"
             - ""
-            - "&7点击切换显示内容"
+            - "&6▶ &8操作"
+            - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       triggers:
         left:
           - 'toggle_rebate_view'

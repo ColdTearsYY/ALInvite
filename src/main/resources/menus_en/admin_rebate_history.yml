@@ -47,17 +47,21 @@ admin_rebate_history:
       custom_model_data: 0
       name: "&e&lToggle View"
       lore:
-        - "&7Current view: &e%view_name%"
+        - "&6▶ &8View"
+        - "&e▸ &7Current view: &e%view_name%"
         - ""
-        - "&7Click to switch display content"
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fSwitch display content"
       states:
         claim:
           material: 'REPEATER'
           name: "&b&lToggle View"
           lore:
-            - "&7Current view: &b%view_name%"
+            - "&b▶ &8View"
+            - "&b▸ &7Current view: &b%view_name%"
             - ""
-            - "&7Click to switch display content"
+            - "&6▶ &8Actions"
+            - "&7• &aLeft click &a➤ &fSwitch display content"
       triggers:
         left:
           - 'toggle_admin_rebate_view'

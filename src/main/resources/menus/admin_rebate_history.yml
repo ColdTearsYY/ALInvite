@@ -6,7 +6,7 @@
 config_version: 1
 
 admin_rebate_history:
-  title: "&6&l%target_name% 的返利记录"
+  title: "&6&l%target_name% 的记录"
   shape:
     - "####T####"
     - "#RRRRRRR#"
@@ -18,7 +18,7 @@ admin_rebate_history:
     T:
       material: 'GOLD_INGOT'
       custom_model_data: 0
-      name: "&6&l%target_name% 的返利信息"
+      name: "&6&l%target_name% 的信息"
       lore:
         - "&6▶ &8玩家数据"
         - "&e▸ &7目标玩家: &f%target_name%"
@@ -50,17 +50,21 @@ admin_rebate_history:
       custom_model_data: 0
       name: "&e&l切换视图"
       lore:
-        - "&7当前视图: &e%view_name%"
+        - "&6▶ &8视图"
+        - "&e▸ &7当前视图: &e%view_name%"
         - ""
-        - "&7点击切换显示内容"
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       states:
         claim:
           material: 'REPEATER'
           name: "&b&l切换视图"
           lore:
-            - "&7当前视图: &b%view_name%"
+            - "&b▶ &8视图"
+            - "&b▸ &7当前视图: &b%view_name%"
             - ""
-            - "&7点击切换显示内容"
+            - "&6▶ &8操作"
+            - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       triggers:
         left:
           - 'toggle_admin_rebate_view'
