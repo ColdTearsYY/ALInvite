@@ -55,7 +55,11 @@ public final class MenuItems {
                 meta.setCustomModelData(cmd);
             }
             meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-            item.getTriggers().forEach((trigger, actions) -> pdc.write(meta, trigger, actions));
+            item.getTriggers().forEach((trigger, actions) -> {
+                // 占位符解析后再写入 PDC，否则 %gift_id% 等动态值会以原文存入
+                List<String> resolved = MenuText.renderActionList(actions, context);
+                pdc.write(meta, trigger, resolved);
+            });
             stack.setItemMeta(meta);
         }
         return stack;

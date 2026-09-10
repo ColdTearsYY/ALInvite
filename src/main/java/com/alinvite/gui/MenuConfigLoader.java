@@ -23,7 +23,7 @@ import java.util.Map;
 public class MenuConfigLoader {
 
     public static final int CONFIG_VERSION = 1;
-    public static final List<String> DEFAULT_MENUS = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP);
+    public static final List<String> DEFAULT_MENUS = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP, MenuNames.REBATE_HISTORY);
     private static final List<String> LEGACY_MENU_KEYS = List.of("main_menu", "veteran_menu", "shop_menu");
 
     private final ALInvite plugin;

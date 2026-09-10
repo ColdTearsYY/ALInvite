@@ -298,10 +298,15 @@ public class ALInvite extends JavaPlugin {
                 scheduler.cancel(permissionGroupCheckTaskId);
                 permissionGroupCheckTaskId = -1;
             }
+            // 注销所有旧监听器（持有旧 Manager 引用，不注销会导致菜单不可点）
+            org.bukkit.event.HandlerList.unregisterAll((org.bukkit.plugin.Plugin) this);
+
             databaseManager.close();
             configManager.loadAll();
             initDatabase();
             initManagers();
+            initListeners();
+            initPlaceholder();
             schedulePermissionGroupCheck();
         } catch (Exception e) {
             getLogger().severe("Reload failed: " + e.getMessage());

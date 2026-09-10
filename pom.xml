@@ -202,10 +202,7 @@
                                     <pattern>com.google.gson</pattern>
                                     <shadedPattern>com.alinvite.libs.gson</shadedPattern>
                                 </relocation>
-                                <relocation>
-                                    <pattern>org.slf4j</pattern>
-                                    <shadedPattern>com.alinvite.libs.slf4j</shadedPattern>
-                                </relocation>
+
                             </relocations>
                         </configuration>
                     </execution>

@@ -161,7 +161,9 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     })))
             .thenAccept(payload -> {
                 Object[] parts = (Object[]) payload;
+                String inviteCode = plugin.getPlaceholderResolver().getInviteCodeSync(player.getUniqueId());
                 String message = plugin.getConfigManager().getMessage("commands.stats", player)
+                    .replace("{invite_code}", inviteCode != null ? inviteCode : "N/A")
                     .replace("{total}", String.valueOf(parts[0]))
                     .replace("{claimed_milestones}", formatClaimedMilestones((String) parts[1]))
                     .replace("{gift_name}", (String) parts[2]);
