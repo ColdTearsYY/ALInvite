@@ -1233,28 +1233,38 @@ public class DatabaseManager {
         return AsyncPool.supply(() -> claimUnclaimedRebateSync(uuid));
     }
 
-    public void addRebateRecordSync(UUID uuid, double amount, String sourceName) {
-        String sql = "INSERT INTO " + tablePrefix + "rebate_records (player_uuid, amount, source_name, created_at) VALUES (?, ?, ?, ?)";
+    /** 写入一条操作记录。type: 'rebate'（入池）或 'claim'（领取）。 */
+    public void addRebateRecordSync(UUID uuid, String type, double amount, String sourceName) {
+        String sql = "INSERT INTO " + tablePrefix + "rebate_records (player_uuid, type, amount, source_name, created_at) VALUES (?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, uuid.toString());
-            stmt.setDouble(2, amount);
-            stmt.setString(3, sourceName);
-            stmt.setLong(4, System.currentTimeMillis());
+            stmt.setString(2, type);
+            stmt.setDouble(3, amount);
+            stmt.setString(4, sourceName);
+            stmt.setLong(5, System.currentTimeMillis());
             stmt.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().severe("写入返利记录失败: " + e.getMessage());
         }
     }
 
-    /** 最近 limit 条返利记录（时间倒序）。 */
-    public List<RebateRecord> getRebateRecordsSync(UUID uuid, int limit) {
+    /** 最近 limit 条记录（时间倒序）。type 可选过滤；null 返回全部。 */
+    public List<RebateRecord> getRebateRecordsSync(UUID uuid, String type, int limit) {
         List<RebateRecord> records = new ArrayList<>();
-        String sql = "SELECT amount, source_name, created_at FROM " + tablePrefix + "rebate_records WHERE player_uuid = ? ORDER BY created_at DESC LIMIT ?";
+        StringBuilder sql = new StringBuilder("SELECT type, amount, source_name, created_at FROM " + tablePrefix + "rebate_records WHERE player_uuid = ?");
+        if (type != null && !type.isBlank()) {
+            sql.append(" AND type = ?");
+        }
+        sql.append(" ORDER BY created_at DESC LIMIT ?");
         try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, uuid.toString());
-            stmt.setInt(2, Math.max(1, limit));
+             PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int paramIdx = 1;
+            stmt.setString(paramIdx++, uuid.toString());
+            if (type != null && !type.isBlank()) {
+                stmt.setString(paramIdx++, type);
+            }
+            stmt.setInt(paramIdx++, Math.max(1, limit));
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     records.add(new RebateRecord(rs.getString("type"), rs.getDouble("amount"), rs.getString("source_name"), rs.getLong("created_at")));
@@ -1267,7 +1277,7 @@ public class DatabaseManager {
     }
 
     public CompletableFuture<List<RebateRecord>> getRebateRecords(UUID uuid, int limit) {
-        return AsyncPool.supply(() -> getRebateRecordsSync(uuid, limit));
+        return AsyncPool.supply(() -> getRebateRecordsSync(uuid, null, limit));
     }
 
     public record RebateRecord(String type, double amount, String sourceName, long createdAt) {

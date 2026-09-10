@@ -65,7 +65,7 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
         UUID uuid = player.getUniqueId();
         RenderContext context = plugin.getPlaceholderResolver().renderContext(player);
         List<DatabaseManager.RebateRecord> allRecords =
-            plugin.getDatabaseManager().getRebateRecordsSync(uuid, 200);
+            plugin.getDatabaseManager().getRebateRecordsSync(uuid, null, 200);
         return new HistoryData(context, allRecords);
     }
 

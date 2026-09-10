@@ -300,7 +300,7 @@ public class PointsRebateManager {
     private CompletableFuture<Boolean> parkRebate(UUID playerUuid, double amount, String targetPlayer, double originalAmount, boolean pointsMode) {
         return AsyncPool.supply(() -> {
             database.addUnclaimedRebateSync(playerUuid, amount);
-            database.addRebateRecordSync(playerUuid, amount, targetPlayer);
+            database.addRebateRecordSync(playerUuid, "rebate", amount, targetPlayer);
             database.updateTotalRebatePointsSync(playerUuid, amount);
             return true;
         }).thenApply(success -> {
