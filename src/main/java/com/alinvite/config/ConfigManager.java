@@ -323,8 +323,11 @@ public class ConfigManager {
     }
 
     private FileConfiguration loadBuiltin(String path) {
-        InputStreamReader reader = new InputStreamReader(plugin.getResource(path), StandardCharsets.UTF_8);
-        return YamlConfiguration.loadConfiguration(reader);
+        java.io.InputStream stream = plugin.getResource(path);
+        if (stream == null) {
+            return null;
+        }
+        return YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
     }
 
     /** 递归合并：仅当磁盘缺失时写入默认值。返回是否有变更。 */
