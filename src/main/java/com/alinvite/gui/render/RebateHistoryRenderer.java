@@ -100,7 +100,11 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
             .add("prev_page_hint", result.currentPage() <= 1
                 ? langRaw("menu.page.first_page") : langRaw("menu.page.prev_hint"))
             .add("next_page_hint", result.currentPage() >= result.totalPages()
-                ? langRaw("menu.page.last_page") : langRaw("menu.page.next_hint"));
+                ? langRaw("menu.page.last_page") : langRaw("menu.page.next_hint"))
+            .add("view_name", showClaims
+                ? langRaw("menu.rebate.view_claims") : langRaw("menu.rebate.view_rebates"))
+            .add("toggle_target", showClaims
+                ? langRaw("menu.rebate.view_rebates") : langRaw("menu.rebate.view_claims"));
 
         // A 切换按钮
         MenuItem toggleBtn = config.getItems().get("A");

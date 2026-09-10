@@ -29,7 +29,7 @@ public final class MenuText {
             "milestone_name", "milestone_required", "milestone_status",
             "current", "required", "remaining",
             "price_money", "price_points", "duration_text", "duration_days",
-            "unclaimed_rebate", "rebate_rate",
+            "unclaimed_rebate", "rebate_rate", "view_name", "toggle_target",
             "record_time", "record_text", "record_source", "record_value",
             "reward_lore");
 
