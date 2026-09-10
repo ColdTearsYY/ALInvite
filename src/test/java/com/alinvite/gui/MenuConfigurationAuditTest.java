@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MenuConfigurationAuditTest {
 
     private static final List<String> MENU_FILES =
-        List.of("main_menu.yml", "veteran_menu.yml", "shop_menu.yml", "rebate_history.yml");
+        List.of("main_menu.yml", "veteran_menu.yml", "shop_menu.yml", "rebate_history.yml", "admin_rebate_history.yml");
 
     private File resource(String path) {
         // 兼容从项目根目录或模块目录运行测试

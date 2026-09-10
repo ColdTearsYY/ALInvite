@@ -82,10 +82,10 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 return plugin.getInviteManager().generateInviteCode(player.getUniqueId());
             }
             return CompletableFuture.completedFuture(code);
-        }).thenAccept(code -> {
+        }).thenAccept(code -> plugin.getScheduler().runAtPlayer(player, () -> {
             String message = plugin.getConfigManager().getMessage("commands.code", player).replace("{invite_code}", code);
             player.sendMessage(message);
-        });
+        }));
     }
 
     private void handleBind(CommandSender sender, String[] args) {

@@ -68,8 +68,8 @@ public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHist
         if (targetUuid == null) return new HistoryData(context, List.of());
         context.add("total_rebate", plugin.getPlaceholderResolver().getTotalRebateSync(targetUuid));
         context.add("unclaimed_rebate", formatAmount(plugin.getDatabaseManager().getUnclaimedRebateSync(targetUuid)));
-        Player target = Bukkit.getPlayer(targetUuid);
-        if (target != null && target.isOnline()) context.add("rebate_rate", plugin.getPointsRebateManager().getRebateRateDisplay(target));
+        // 管理员视图的异步取数不直接读取目标玩家权限；目标在线时由实体调度另行补充会更安全。
+        // 离线目标不显示返点比例，条件行会自动隐藏。
         return new HistoryData(context, plugin.getDatabaseManager().getRebateRecordsSync(targetUuid, null, 200));
     }
 
