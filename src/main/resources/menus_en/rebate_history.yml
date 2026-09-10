@@ -47,6 +47,16 @@ rebate_history:
       triggers:
         left:
           - 'toggle_rebate_view'
+      material: 'LEVER'
+      custom_model_data: 0
+      name: "&e&lToggle View"
+      lore:
+        - "&7Current view: &e%view_name%"
+        - ""
+        - "&7Click to switch display content"
+      triggers:
+        left:
+          - 'toggle_rebate_view'
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
