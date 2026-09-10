@@ -152,6 +152,11 @@ menu:
     days: "{value}天"
   rebate:
     date_format: "yyyy年M月d日 HH:mm"
+    view_rebates: "返利记录"
+    view_claims: "领取记录"
     record_text: "&7为你提供了 &e{value} &7点券返利"
+    record_text_claim: "&7你领取了 &e{value} &7点券返利"
     empty_title: "&e暂无返利记录"
     empty: "&7你获得的返利会记录在这里"
+    empty_title_claim: "&e暂无领取记录"
+    empty_claim: "&7你的领取记录会显示在这里"

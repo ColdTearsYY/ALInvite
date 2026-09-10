@@ -10,72 +10,95 @@ import com.alinvite.gui.MenuSessionStore;
 import com.alinvite.gui.Pagination;
 import com.alinvite.database.DatabaseManager;
 import com.alinvite.scheduler.ALInviteScheduler;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.ItemStack;
 
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 返利记录菜单：展示每笔返利的发放时间与金额（时间倒序）。
- * 支持两种视图模式（A 按钮切换）：
- *   - rebate 视图：显示入池记录（充值返利到账）
- *   - claim 视图：显示领取操作记录（管理员核销 / 玩家手动领取）
+ * 管理员查看指定玩家的返利记录菜单（/alinvite admin rebate <玩家>）。
+ * 与 {@link RebateHistoryRenderer} 同构，差别仅在数据源是目标玩家：
+ * 查看者 → 目标 的映射随会话保存在本渲染器，退出/停服时清理。
  */
-public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRenderer.HistoryData> {
+public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHistoryRenderer.HistoryData> {
 
     private final Map<UUID, Boolean> claimViewToggle = new ConcurrentHashMap<>();
+    private final Map<UUID, UUID> viewerTargets = new ConcurrentHashMap<>();
+    private final Map<UUID, String> viewerTargetNames = new ConcurrentHashMap<>();
 
     public record HistoryData(RenderContext context,
                                List<DatabaseManager.RebateRecord> records) {
     }
 
-    public RebateHistoryRenderer(ALInvite plugin, MenuSessionStore sessions, GuiPageStore pages,
-                                 ALInviteScheduler scheduler, ActionPdc pdc) {
+    public AdminRebateHistoryRenderer(ALInvite plugin, MenuSessionStore sessions, GuiPageStore pages,
+                                      ALInviteScheduler scheduler, ActionPdc pdc) {
         super(plugin, sessions, pages, scheduler, pdc);
     }
 
     @Override
     protected String menuName() {
-        return MenuNames.REBATE_HISTORY;
+        return MenuNames.ADMIN_REBATE_HISTORY;
     }
 
-    private boolean isClaimView(UUID uuid) {
-        return Boolean.TRUE.equals(claimViewToggle.get(uuid));
+    /** 打开目标玩家的记录菜单：换目标时页码回到第 1 页。 */
+    public void open(Player admin, UUID targetUuid, String targetName) {
+        UUID viewer = admin.getUniqueId();
+        UUID previous = viewerTargets.put(viewer, targetUuid);
+        viewerTargetNames.put(viewer, targetName);
+        if (previous == null || !previous.equals(targetUuid)) {
+            pages.set(viewer, menuName(), 1);
+        }
+        open(admin);
     }
 
     /** 切换视图（返利到账 ↔ 领取操作）。 */
-    public void toggleView(Player player) {
-        UUID uuid = player.getUniqueId();
+    public void toggleView(Player admin) {
+        UUID uuid = admin.getUniqueId();
         Boolean current = claimViewToggle.get(uuid);
         claimViewToggle.put(uuid, !Boolean.TRUE.equals(current));
-        refresh(player);
+        refresh(admin);
     }
 
-    /** 玩家退出时清理视图状态（下次打开回到返利视图）。 */
+    /** 玩家退出时清理视图与目标映射。 */
     public void clearPlayerState(UUID uuid) {
         claimViewToggle.remove(uuid);
+        viewerTargets.remove(uuid);
+        viewerTargetNames.remove(uuid);
     }
 
-    /** 停服时清理全部视图状态。 */
+    /** 停服时清理全部状态。 */
     public void clearAllPlayerState() {
         claimViewToggle.clear();
+        viewerTargets.clear();
+        viewerTargetNames.clear();
     }
 
     @Override
-    protected HistoryData loadData(Player player) {
-        UUID uuid = player.getUniqueId();
-        RenderContext context = plugin.getPlaceholderResolver().renderContext(player);
+    protected HistoryData loadData(Player admin) {
+        UUID viewer = admin.getUniqueId();
+        UUID targetUuid = viewerTargets.get(viewer);
+        String targetName = viewerTargetNames.getOrDefault(viewer, "Unknown");
+
+        RenderContext context = new RenderContext(admin);
+        context.add("target_name", targetName);
+        if (targetUuid == null) {
+            return new HistoryData(context, List.of());
+        }
+        context.add("total_rebate", plugin.getPlaceholderResolver().getTotalRebateSync(targetUuid));
+        context.add("unclaimed_rebate",
+            formatAmount(plugin.getDatabaseManager().getUnclaimedRebateSync(targetUuid)));
+        Player target = Bukkit.getPlayer(targetUuid);
+        if (target != null && target.isOnline()) {
+            // 离线玩家取不到权限组比例，该行 lore 自动隐藏
+            context.add("rebate_rate", plugin.getPointsRebateManager().getRebateRateDisplay(target));
+        }
         List<DatabaseManager.RebateRecord> allRecords =
-            plugin.getDatabaseManager().getRebateRecordsSync(uuid, null, 200);
+            plugin.getDatabaseManager().getRebateRecordsSync(targetUuid, null, 200);
         return new HistoryData(context, allRecords);
     }
 
@@ -85,14 +108,14 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
     }
 
     @Override
-    protected void fillDynamic(Player player, MenuConfig config, Inventory inventory, HistoryData data, int page) {
+    protected void fillDynamic(Player admin, MenuConfig config, Inventory inventory, HistoryData data, int page) {
         List<Integer> slots = config.getDynamicSlots();
         if (slots.isEmpty()) {
             return;
         }
 
-        UUID uuid = player.getUniqueId();
-        boolean showClaims = isClaimView(uuid);
+        UUID uuid = admin.getUniqueId();
+        boolean showClaims = Boolean.TRUE.equals(claimViewToggle.get(uuid));
 
         List<DatabaseManager.RebateRecord> filtered = data.records().stream()
             .filter(r -> showClaims == "claim".equals(r.type()))
@@ -112,9 +135,7 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
             .add("next_page_hint", result.currentPage() >= result.totalPages()
                 ? langRaw("menu.page.last_page") : langRaw("menu.page.next_hint"))
             .add("view_name", showClaims
-                ? langRaw("menu.rebate.view_claims") : langRaw("menu.rebate.view_rebates"))
-            .add("toggle_target", showClaims
-                ? langRaw("menu.rebate.view_rebates") : langRaw("menu.rebate.view_claims"));
+                ? langRaw("menu.rebate.view_claims") : langRaw("menu.rebate.view_rebates"));
 
         // A 切换按钮：领取视图应用 states.claim 样式，返利视图用基础样式
         MenuItem toggleBtn = config.getItems().get("A");
@@ -133,7 +154,7 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
         MenuItem.StateStyle recordState = recordItem.getState(showClaims ? "claim" : null);
 
         var fmt = java.time.format.DateTimeFormatter.ofPattern(
-            langRaw("menu.rebate.date_format"), Locale.CHINA);
+            langRaw("menu.rebate.date_format"), java.util.Locale.CHINA);
         var tz = java.util.TimeZone.getTimeZone(plugin.getConfigManager().getTimeZone());
 
         int index = 0;
@@ -170,12 +191,12 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
     }
 
     private String formatAmount(double amount) {
-        return amount == Math.floor(amount) && !Double.isInfinite(amount)
+        return amount == java.lang.Math.floor(amount) && !Double.isInfinite(amount)
             ? String.valueOf((long) amount)
-            : String.format(Locale.ROOT, "%.2f", amount);
+            : String.format(java.util.Locale.ROOT, "%.2f", amount);
     }
 
-    protected String langRaw(String key) {
+    private String langRaw(String key) {
         return plugin.getConfigManager().getMessageRaw(key);
     }
 }

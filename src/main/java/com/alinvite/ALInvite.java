@@ -46,6 +46,7 @@ public class ALInvite extends JavaPlugin {
     private RedisManager redisManager;
     private CrossServerSync crossServerSync;
     private int permissionGroupCheckTaskId = -1;
+    private int rebateRecordCleanupTaskId = -1;
 
     public static ALInvite getInstance() {
         return instance;
@@ -100,6 +101,7 @@ public class ALInvite extends JavaPlugin {
             initAPI();
 
             schedulePermissionGroupCheck();
+            scheduleRebateRecordCleanup();
 
             printLoadStatus();
         } catch (Exception e) {
@@ -300,6 +302,31 @@ public class ALInvite extends JavaPlugin {
         }, interval, interval);
     }
 
+    /**
+     * 定时清理超期返利/领取记录：启动 1 分钟后先跑一次，之后每 6 小时一次。
+     * 每次执行时重读 points_rebate.record_retention_days——改天数或改成 0（永久保留）无需重启。
+     */
+    private void scheduleRebateRecordCleanup() {
+        if (rebateRecordCleanupTaskId != -1 && scheduler != null) {
+            scheduler.cancel(rebateRecordCleanupTaskId);
+            rebateRecordCleanupTaskId = -1;
+        }
+        long minute = 20L * 60;
+        long sixHours = 20L * 60 * 60 * 6;
+        rebateRecordCleanupTaskId = scheduler.runAsyncTimer(() -> {
+            int retentionDays = configManager.getConfig()
+                .getInt("points_rebate.record_retention_days", 30);
+            if (retentionDays <= 0) {
+                return;
+            }
+            int deleted = databaseManager.cleanupRebateRecordsSync(retentionDays);
+            if (deleted > 0) {
+                getLogger().info("已清理 " + deleted + " 条超期返利/领取记录（保留最近 "
+                    + retentionDays + " 天）");
+            }
+        }, minute, sixHours);
+    }
+
     public void reload() {
         try {
             // 停旧定时任务
@@ -317,6 +344,7 @@ public class ALInvite extends JavaPlugin {
             initListeners();
             initPlaceholder();
             schedulePermissionGroupCheck();
+            scheduleRebateRecordCleanup();
         } catch (Exception e) {
             getLogger().severe("Reload failed: " + e.getMessage());
             e.printStackTrace();

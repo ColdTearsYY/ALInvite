@@ -1249,6 +1249,26 @@ public class DatabaseManager {
         }
     }
 
+    /**
+     * 清理超期的返利/领取记录（两种 type 一并清理，按 created_at 判断）。
+     * retentionDays <= 0 表示永久保留，直接返回。返回删除条数。
+     */
+    public int cleanupRebateRecordsSync(int retentionDays) {
+        if (retentionDays <= 0) {
+            return 0;
+        }
+        long cutoff = System.currentTimeMillis() - retentionDays * 24L * 3600L * 1000L;
+        String sql = "DELETE FROM " + tablePrefix + "rebate_records WHERE created_at < ?";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, cutoff);
+            return stmt.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().warning("清理返利/领取记录失败: " + e.getMessage());
+            return 0;
+        }
+    }
+
     /** 最近 limit 条记录（时间倒序）。type 可选过滤；null 返回全部。 */
     public List<RebateRecord> getRebateRecordsSync(UUID uuid, String type, int limit) {
         List<RebateRecord> records = new ArrayList<>();

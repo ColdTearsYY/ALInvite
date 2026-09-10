@@ -340,9 +340,16 @@ public class PointsRebateManager {
         }
         final String claimCommand = plugin.getConfigManager().getConfig()
             .getString("points_rebate.claim_command", "").trim();
-        AsyncPool.supply(() -> claimCommand.isEmpty()
-                ? database.claimUnclaimedRebateSync(uuid)      // 计入贡献返点余额
-                : database.clearUnclaimedRebateSync(uuid))     // 命令模式：仅清零未领取池
+        AsyncPool.supply(() -> {
+                Double claimed = claimCommand.isEmpty()
+                    ? database.claimUnclaimedRebateSync(uuid)      // 计入贡献返点余额
+                    : database.clearUnclaimedRebateSync(uuid);     // 命令模式：仅清零未领取池
+                // 领取动作落一条 claim 记录，返利记录菜单的领取视图可见
+                if (claimed != null && claimed > 0) {
+                    database.addRebateRecordSync(uuid, "claim", claimed, null);
+                }
+                return claimed;
+            })
             .thenAccept(claimed -> plugin.getScheduler().runAtPlayer(player, () -> {
                 if (claimed == null || claimed <= 0) {
                     player.sendMessage(plugin.getConfigManager().getMessage("points_rebate.claim_empty"));

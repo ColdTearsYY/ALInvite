@@ -152,6 +152,11 @@ menu:
     days: "{value} days"
   rebate:
     date_format: "MMM d, yyyy HH:mm"
+    view_rebates: "Rebate Records"
+    view_claims: "Claim Records"
     record_text: "&7You received &e{value} &7rebate points"
+    record_text_claim: "&7You claimed &e{value} &7rebate points"
     empty_title: "&eNo rebate records"
     empty: "&7Your rebates will be listed here"
+    empty_title_claim: "&eNo claim records"
+    empty_claim: "&7Your claims will be listed here"

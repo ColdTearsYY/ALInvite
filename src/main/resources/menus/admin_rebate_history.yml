@@ -1,13 +1,12 @@
-# ALInvite 返利记录菜单
-# R 为动态槽位：显示记录条目（时间倒序）。
+# ALInvite 管理员查看玩家返利记录菜单（/alinvite admin rebate <玩家>）
+# R 为动态槽位：显示目标玩家的记录条目（时间倒序）。
 #   返利视图用基础样式（PAPER/金色），领取视图用 states.claim 样式（BOOK/蓝色）。
-# A = 切换视图（返利记录 ↔ 领取记录），states.claim 为领取视图外观。
-# H = 返回主菜单，X = 关闭，P/N = 翻页。
+# T = 目标玩家汇总信息，A = 切换视图，H = 返回管理员自己的主菜单，X = 关闭，P/N = 翻页。
 
 config_version: 1
 
-rebate_history:
-  title: "&6&l返利记录"
+admin_rebate_history:
+  title: "&6&l%target_name% 的返利记录"
   shape:
     - "####T####"
     - "#RRRRRRR#"
@@ -17,20 +16,18 @@ rebate_history:
     - "P#X#A#H#N"
   items:
     T:
-      material: 'NAME_TAG'
+      material: 'GOLD_INGOT'
       custom_model_data: 0
-      name: "&6&l返利记录"
+      name: "&6&l%target_name% 的返利信息"
       lore:
-        - "&6▶ &8本菜单介绍"
-        - "&e▸ &7这里记录你获得的每一笔充值返利"
-        - "&a▸ &7包括发放时间、金额与来源玩家"
-        - ""
+        - "&6▶ &8玩家数据"
+        - "&e▸ &7目标玩家: &f%target_name%"
         - "&e▸ &7累计返点: &e%total_rebate% 点券"
         - "&a▸ &7未领取: &a%unclaimed_rebate% 点券"
-        - "&6▸ &7你的返利比例: &e%rebate_rate%"
+        - "&6▸ &7返点比例: &e%rebate_rate%"
         - ""
-        - "&6▶ &8如何领取"
-        - "&7• &a主菜单「充值返利」&a➤ &f左键手动领取"
+        - "&6▶ &8操作提示"
+        - "&7• &a主菜单命令核销: &f/alinvite admin unclaimed clear <玩家>"
     R:
       dynamic: true
       material: 'PAPER'
@@ -66,14 +63,14 @@ rebate_history:
             - "&7点击切换显示内容"
       triggers:
         left:
-          - 'toggle_rebate_view'
+          - 'toggle_admin_rebate_view'
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
       name: "&a&l返回主菜单"
       lore:
         - "&6▶ &8操作"
-        - "&7• &a鼠标左键 &a➤ &f返回主菜单"
+        - "&7• &a鼠标左键 &a➤ &f返回你的主菜单"
       triggers:
         left:
           - 'open_main'

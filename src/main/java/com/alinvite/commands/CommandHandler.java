@@ -5,11 +5,7 @@ import com.alinvite.config.ConfigManager;
 import com.alinvite.utils.PapiDetector;
 import com.alinvite.utils.PlaceholderResolver;
 import org.bukkit.Bukkit;
-import org.bukkit.Material;
 import org.bukkit.command.Command;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.ItemFlag;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -586,6 +582,11 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     }
                     UUID targetUuid = getPlayerUuid(args[3]);
                     plugin.getDatabaseManager().clearUnclaimedRebate(targetUuid).thenAccept(cleared -> {
+                        // 核销也落一条 claim 记录（经手人=管理员），玩家侧领取视图可见
+                        if (cleared != null && cleared > 0) {
+                            plugin.getDatabaseManager().addRebateRecordSync(
+                                targetUuid, "claim", cleared, sender.getName());
+                        }
                         String msg = cleared != null && cleared > 0
                             ? "已核销玩家 " + args[3] + " 的未领取返点: " + String.format("%.2f", cleared) + " 点券（请确认已线下发放）"
                             : "玩家 " + args[3] + " 没有未领取的返点";
@@ -602,6 +603,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 });
             }
             case "rebate" -> {
+                // /alinvite admin rebate <玩家>    打开目标玩家的返利记录菜单（双视图 + 翻页）
                 if (!(sender instanceof Player admin)) {
                     sender.sendMessage("该指令只能由玩家执行");
                     return;
@@ -612,78 +614,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 }
                 String targetName = args[2];
                 UUID targetUuid = getPlayerUuid(targetName);
-                plugin.getDatabaseManager().getRebateRecords(targetUuid, 35).thenAccept(records ->
-                    plugin.getDatabaseManager().getUnclaimedRebate(targetUuid).thenAccept(unclaimed ->
-                        plugin.getScheduler().runAtPlayer(admin, () -> {
-                            // 构建菜单
-                            var title = ConfigManager.colorize("&8" + targetName + " 的返利记录");
-                            var inv = Bukkit.createInventory(admin, 54, title);
-
-                            // 背景
-                            var bg = new ItemStack(org.bukkit.Material.BLACK_STAINED_GLASS_PANE);
-                            var bgMeta = bg.getItemMeta();
-                            if (bgMeta != null) {
-                                bgMeta.setDisplayName(" ");
-                                bgMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES);
-                                bg.setItemMeta(bgMeta);
-                            }
-                            for (int i = 0; i < 54; i++) inv.setItem(i, bg);
-
-                            // 顶部汇总信息
-                            var info = new ItemStack(org.bukkit.Material.GOLD_INGOT);
-                            var im = info.getItemMeta();
-                            if (im != null) {
-                                im.setDisplayName(ConfigManager.colorize("&6&l" + targetName + " 的返利信息"));
-                                im.setLore(List.of(
-                                    ConfigManager.colorize("&e▸ 未领取: &a" + String.format("%.2f", unclaimed) + " 点券"),
-                                    ConfigManager.colorize("&7▸ 共 " + records.size() + " 条记录")));
-                                im.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES);
-                                info.setItemMeta(im);
-                            }
-                            inv.setItem(4, info);
-
-                            // 返利记录（从第 10 格起，每行 7 条）
-                            var fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm");
-                            var zone = java.time.ZoneId.systemDefault();
-                            int paperIndex = 0;
-                            for (var r : records) {
-                                int row = paperIndex / 7;
-                                int col = paperIndex % 7;
-                                int slot = 9 + row * 9 + 1 + col;
-                                if (slot >= 45) break;
-
-                                var record = new ItemStack(org.bukkit.Material.PAPER);
-                                var rm = record.getItemMeta();
-                                if (rm != null) {
-                                    String timeStr = fmt.format(java.time.Instant.ofEpochMilli(r.createdAt())
-                                        .atZone(zone).toLocalDateTime());
-                                    rm.setDisplayName(ConfigManager.colorize("&6" + timeStr));
-                                    List<String> recordLore = new ArrayList<>();
-                                    recordLore.add(ConfigManager.colorize("&a▸ 获得返利: &e" + String.format("%.0f", r.amount()) + " 点券"));
-                                    if (r.sourceName() != null && !r.sourceName().isEmpty()) {
-                                        recordLore.add(ConfigManager.colorize("&7来源: &f" + r.sourceName()));
-                                    }
-                                    rm.setLore(recordLore);
-                                    rm.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES);
-                                    record.setItemMeta(rm);
-                                }
-                                inv.setItem(slot, record);
-                                paperIndex++;
-                            }
-
-                            // 关闭按钮
-                            var closeBtn = new ItemStack(org.bukkit.Material.BARRIER);
-                            var closeMeta = closeBtn.getItemMeta();
-                            if (closeMeta != null) {
-                                closeMeta.setDisplayName(ConfigManager.colorize("&c关闭"));
-                                closeBtn.setItemMeta(closeMeta);
-                            }
-                            inv.setItem(49, closeBtn);
-
-                            admin.openInventory(inv);
-                        })
-                    )
-                );
+                plugin.getMenuManager().openAdminRebateHistoryMenu(admin, targetUuid, targetName);
             }
             case "checkgroup" -> {
                 if (args.length < 3) {

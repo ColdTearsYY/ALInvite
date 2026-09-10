@@ -1,9 +1,9 @@
-# ALInvite rebate history menu (English)
+# ALInvite admin rebate history menu (/alinvite admin rebate <player>)
 
 config_version: 1
 
-rebate_history:
-  title: "&6&lRebate History"
+admin_rebate_history:
+  title: "&6&l%target_name%'s Rebate History"
   shape:
     - "####T####"
     - "#RRRRRRR#"
@@ -13,20 +13,18 @@ rebate_history:
     - "P#X#A#H#N"
   items:
     T:
-      material: 'NAME_TAG'
+      material: 'GOLD_INGOT'
       custom_model_data: 0
-      name: "&6&lRebate History"
+      name: "&6&l%target_name%'s Rebate Info"
       lore:
-        - "&6▶ &8About this menu"
-        - "&e▸ &7Every rebate you earned is listed here"
-        - "&a▸ &7Including time, amount and the source player"
-        - ""
+        - "&6▶ &8Player Data"
+        - "&e▸ &7Target player: &f%target_name%"
         - "&e▸ &7Total rebates: &e%total_rebate% points"
         - "&a▸ &7Unclaimed: &a%unclaimed_rebate% points"
-        - "&6▸ &7Your rebate rate: &e%rebate_rate%"
+        - "&6▸ &7Rebate rate: &e%rebate_rate%"
         - ""
-        - "&6▶ &8How to claim"
-        - "&7• &aMain menu &e「Rebate Center」&a➤ &fLeft click to claim"
+        - "&6▶ &8Tips"
+        - "&7• &aManual write-off: &f/alinvite admin unclaimed clear <player>"
     R:
       dynamic: true
       material: 'PAPER'
@@ -62,14 +60,14 @@ rebate_history:
             - "&7Click to switch display content"
       triggers:
         left:
-          - 'toggle_rebate_view'
+          - 'toggle_admin_rebate_view'
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
       name: "&a&lBack to Main Menu"
       lore:
         - "&6▶ &8Actions"
-        - "&7• &aLeft click &a➤ &fReturn to the main menu"
+        - "&7• &aLeft click &a➤ &fReturn to your main menu"
       triggers:
         left:
           - 'open_main'

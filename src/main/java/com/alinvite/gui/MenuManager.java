@@ -24,6 +24,7 @@ public class MenuManager {
     private final com.alinvite.gui.render.VeteranMenuRenderer veteranRenderer;
     private final com.alinvite.gui.render.ShopMenuRenderer shopRenderer;
     private final com.alinvite.gui.render.RebateHistoryRenderer rebateHistoryRenderer;
+    private final com.alinvite.gui.render.AdminRebateHistoryRenderer adminRebateHistoryRenderer;
 
     public MenuManager(ALInvite plugin) {
         this.plugin = plugin;
@@ -39,6 +40,7 @@ public class MenuManager {
         this.veteranRenderer = new com.alinvite.gui.render.VeteranMenuRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
         this.shopRenderer = new com.alinvite.gui.render.ShopMenuRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
         this.rebateHistoryRenderer = new com.alinvite.gui.render.RebateHistoryRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
+        this.adminRebateHistoryRenderer = new com.alinvite.gui.render.AdminRebateHistoryRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
     }
 
     public void openRebateHistoryMenu(Player player) {
@@ -48,6 +50,16 @@ public class MenuManager {
     /** 切换返利记录的视图模式（返利到账 ↔ 领取操作）。 */
     public void toggleRebateView(Player player) {
         rebateHistoryRenderer.toggleView(player);
+    }
+
+    /** 管理员查看目标玩家的返利记录菜单。 */
+    public void openAdminRebateHistoryMenu(Player admin, java.util.UUID targetUuid, String targetName) {
+        adminRebateHistoryRenderer.open(admin, targetUuid, targetName);
+    }
+
+    /** 切换管理员查看界面的视图模式（返利到账 ↔ 领取操作）。 */
+    public void toggleAdminRebateView(Player admin) {
+        adminRebateHistoryRenderer.toggleView(admin);
     }
 
     /** 按菜单名打开（导航 back 使用）。 */
@@ -111,6 +123,8 @@ public class MenuManager {
         switch (menuName) {
             case MenuNames.VETERAN -> veteranRenderer.refresh(player);
             case MenuNames.SHOP -> shopRenderer.refresh(player);
+            case MenuNames.REBATE_HISTORY -> rebateHistoryRenderer.refresh(player);
+            case MenuNames.ADMIN_REBATE_HISTORY -> adminRebateHistoryRenderer.refresh(player);
             default -> { }
         }
     }
@@ -130,6 +144,14 @@ public class MenuManager {
         pages.clearAll();
         cooldowns.clearAll();
         inputService.clearAll();
+        rebateHistoryRenderer.clearAllPlayerState();
+        adminRebateHistoryRenderer.clearAllPlayerState();
+    }
+
+    /** 玩家退出时清理该玩家散落在各渲染器中的派生状态（如返利记录视图模式）。 */
+    public void clearPlayerState(java.util.UUID uuid) {
+        rebateHistoryRenderer.clearPlayerState(uuid);
+        adminRebateHistoryRenderer.clearPlayerState(uuid);
     }
 
     public String currentMenuName(Player player) {
