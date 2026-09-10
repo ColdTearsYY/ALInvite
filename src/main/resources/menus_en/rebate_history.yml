@@ -10,7 +10,7 @@ rebate_history:
     - "#RRRRRRR#"
     - "#RRRRRRR#"
     - "#RRRRRRR#"
-    - "P##X#B#HN"
+    - "P#X#A#H#N"
   items:
     T:
       material: 'NAME_TAG'
@@ -36,16 +36,17 @@ rebate_history:
         - "&6▶ &8Rebate Received"
         - "&e▸ %record_text%"
         - "&7Source player: &f%record_source%"
-    B:
-      material: 'ARROW'
+    A:
+      material: 'LEVER'
       custom_model_data: 0
-      name: "&a&lBack"
+      name: "&e&lToggle View"
       lore:
-        - "&6▶ &8Actions"
-        - "&7• &aLeft click &a➤ &fReturn to the previous menu"
+        - "&7Current view: &e%view_name%"
+        - ""
+        - "&7Click to switch display content"
       triggers:
         left:
-          - 'back'
+          - 'toggle_rebate_view'
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
@@ -88,8 +89,3 @@ rebate_history:
       triggers:
         left:
           - 'next_page'
-
-    "#":
-      material: 'BLACK_STAINED_GLASS_PANE'
-      custom_model_data: 0
-      name: ' '

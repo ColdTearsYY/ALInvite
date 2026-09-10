@@ -235,6 +235,7 @@ public class DatabaseManager {
                 `player_uuid` VARCHAR(36) NOT NULL,
                 `amount` DECIMAL(10,2) NOT NULL,
                 `source_name` VARCHAR(16),
+                `type` VARCHAR(16) NOT NULL DEFAULT 'rebate',
                 `created_at` BIGINT NOT NULL
             )
             """.replace("{autoIncrement}", autoIncrementSyntax);
@@ -346,6 +347,11 @@ public class DatabaseManager {
             addColumnIfMissing("players", "unclaimed_rebate", isMySQL,
                     "ALTER TABLE " + tablePrefix + "players ADD COLUMN unclaimed_rebate REAL NOT NULL DEFAULT 0",
                     "ALTER TABLE " + tablePrefix + "players ADD COLUMN unclaimed_rebate DECIMAL(10,2) NOT NULL DEFAULT 0");
+            // rebate_records 的 type 列（兼容旧表）
+            if (!checkColumnExists("rebate_records", "type", isMySQL)) {
+                executeUpdate("ALTER TABLE " + tablePrefix + "rebate_records ADD COLUMN type VARCHAR(16) NOT NULL DEFAULT 'rebate'");
+                plugin.getLogger().info("已为 rebate_records 表添加 type 字段");
+            }
         } catch (Exception e) {
             plugin.getLogger().warning("更新数据库表结构失败: " + e.getMessage());
         }
@@ -1251,7 +1257,7 @@ public class DatabaseManager {
             stmt.setInt(2, Math.max(1, limit));
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    records.add(new RebateRecord(rs.getDouble("amount"), rs.getString("source_name"), rs.getLong("created_at")));
+                    records.add(new RebateRecord(rs.getString("type"), rs.getDouble("amount"), rs.getString("source_name"), rs.getLong("created_at")));
                 }
             }
         } catch (SQLException e) {
@@ -1264,7 +1270,7 @@ public class DatabaseManager {
         return AsyncPool.supply(() -> getRebateRecordsSync(uuid, limit));
     }
 
-    public record RebateRecord(double amount, String sourceName, long createdAt) {
+    public record RebateRecord(String type, double amount, String sourceName, long createdAt) {
     }
 
     public CompletableFuture<Boolean> checkCrossServerDuplicate(String transactionKey) {

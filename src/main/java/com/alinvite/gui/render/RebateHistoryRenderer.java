@@ -12,21 +12,30 @@ import com.alinvite.database.DatabaseManager;
 import com.alinvite.scheduler.ALInviteScheduler;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 返利记录菜单：展示每笔返利的发放时间与金额（时间倒序，最近 100 条）。
- * 动态条目上下文：record_time（格式化日期）、record_text（"为你提供了 X 点券返利"）、record_source（来源玩家，可选）。
+ * 返利记录菜单：展示每笔返利的发放时间与金额（时间倒序）。
+ * 支持两种视图模式（A 按钮切换）：
+ *   - rebate 视图：显示入池记录（充值返利到账）
+ *   - claim 视图：显示领取操作记录（管理员核销 / 玩家手动领取）
  */
 public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRenderer.HistoryData> {
 
-    public record HistoryData(RenderContext context, List<DatabaseManager.RebateRecord> records) {
+    private final Map<UUID, Boolean> claimViewToggle = new ConcurrentHashMap<>();
+
+    public record HistoryData(RenderContext context,
+                               List<DatabaseManager.RebateRecord> records) {
     }
 
     public RebateHistoryRenderer(ALInvite plugin, MenuSessionStore sessions, GuiPageStore pages,
@@ -39,12 +48,25 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
         return MenuNames.REBATE_HISTORY;
     }
 
+    private boolean isClaimView(UUID uuid) {
+        return Boolean.TRUE.equals(claimViewToggle.get(uuid));
+    }
+
+    /** 切换视图（返利到账 ↔ 领取操作）。 */
+    public void toggleView(Player player) {
+        UUID uuid = player.getUniqueId();
+        Boolean current = claimViewToggle.get(uuid);
+        claimViewToggle.put(uuid, !Boolean.TRUE.equals(current));
+        refresh(player);
+    }
+
     @Override
     protected HistoryData loadData(Player player) {
         UUID uuid = player.getUniqueId();
         RenderContext context = plugin.getPlaceholderResolver().renderContext(player);
-        List<DatabaseManager.RebateRecord> records = plugin.getDatabaseManager().getRebateRecordsSync(uuid, 100);
-        return new HistoryData(context, records);
+        List<DatabaseManager.RebateRecord> allRecords =
+            plugin.getDatabaseManager().getRebateRecordsSync(uuid, 200);
+        return new HistoryData(context, allRecords);
     }
 
     @Override
@@ -60,10 +82,16 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
         }
 
         UUID uuid = player.getUniqueId();
+        boolean showClaims = isClaimView(uuid);
+
+        List<DatabaseManager.RebateRecord> filtered = data.records().stream()
+            .filter(r -> showClaims == "claim".equals(r.type()))
+            .toList();
+
         Map<UUID, Integer> pageView = new HashMap<>();
         pageView.put(uuid, page);
         Pagination.Page<DatabaseManager.RebateRecord> result =
-            Pagination.page(data.records(), pageView, uuid, slots.size());
+            Pagination.page(filtered, pageView, uuid, slots.size());
         pages.set(uuid, menuName(), result.currentPage());
 
         RenderContext pageContext = data.context().copy()
@@ -74,19 +102,23 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
             .add("next_page_hint", result.currentPage() >= result.totalPages()
                 ? langRaw("menu.page.last_page") : langRaw("menu.page.next_hint"));
 
-        MenuItem recordItem = config.getItems().values().stream()
-            .filter(MenuItem::isDynamic)
-            .findFirst()
-            .orElse(null);
+        // A 切换按钮
+        MenuItem toggleBtn = config.getItems().get("A");
+        if (toggleBtn != null) {
+            for (int slot : config.slotsOf('A')) {
+                setItemSafe(inventory, slot,
+                    MenuItems.build(plugin, pdc(), toggleBtn, null, pageContext));
+            }
+        }
+
+        MenuItem recordItem = config.getItems().get("R");
         if (recordItem == null) {
             return;
         }
 
-        String datePattern = langRaw("menu.rebate.date_format");
-        SimpleDateFormat format = new SimpleDateFormat(datePattern, Locale.CHINA);
-        format.setTimeZone(java.util.TimeZone.getTimeZone(
-            plugin.getConfigManager().getTimeZone()));
-        String emptyText = langRaw("menu.rebate.empty");
+        var fmt = java.time.format.DateTimeFormatter.ofPattern(
+            langRaw("menu.rebate.date_format"), Locale.CHINA);
+        var tz = java.util.TimeZone.getTimeZone(plugin.getConfigManager().getTimeZone());
 
         int index = 0;
         for (DatabaseManager.RebateRecord record : result.entries()) {
@@ -94,24 +126,23 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
                 break;
             }
             RenderContext itemContext = pageContext.copy()
-                .add("record_time", format.format(record.createdAt()))
+                .add("record_time", fmt.format(java.time.Instant.ofEpochMilli(record.createdAt())
+                    .atZone(tz.toZoneId()).toLocalDateTime()))
                 .add("record_value", formatAmount(record.amount()))
                 .add("record_text", langRaw("menu.rebate.record_text")
                     .replace("{value}", formatAmount(record.amount())));
             if (record.sourceName() != null && !record.sourceName().isBlank()) {
                 itemContext.add("record_source", record.sourceName());
             }
-
             setItemSafe(inventory, slots.get(index),
                 MenuItems.build(plugin, pdc(), recordItem, recordItem.getState(null), itemContext));
             index++;
         }
 
-        // 空记录时用"暂无返利记录"占位第一格
         if (result.entries().isEmpty()) {
             RenderContext emptyContext = pageContext.copy()
                 .add("record_time", langRaw("menu.rebate.empty_title"))
-                .add("record_text", emptyText);
+                .add("record_text", langRaw("menu.rebate.empty"));
             setItemSafe(inventory, slots.get(0),
                 MenuItems.build(plugin, pdc(), recordItem, recordItem.getState(null), emptyContext));
         }
