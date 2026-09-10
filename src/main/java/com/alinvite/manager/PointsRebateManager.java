@@ -300,7 +300,7 @@ public class PointsRebateManager {
     private CompletableFuture<Boolean> parkRebate(UUID playerUuid, double amount, String targetPlayer, double originalAmount, boolean pointsMode) {
         return AsyncPool.supply(() -> {
             database.addUnclaimedRebateSync(playerUuid, amount);
-            database.addRebateRecordSync(playerUuid, "rebate", amount, targetPlayer);
+            database.addRebateRecordSync(playerUuid, amount, targetPlayer);
             database.updateTotalRebatePointsSync(playerUuid, amount);
             return true;
         }).thenApply(success -> {
@@ -340,16 +340,9 @@ public class PointsRebateManager {
         }
         final String claimCommand = plugin.getConfigManager().getConfig()
             .getString("points_rebate.claim_command", "").trim();
-        AsyncPool.supply(() -> {
-                Double claimed = claimCommand.isEmpty()
-                    ? database.claimUnclaimedRebateSync(uuid)      // 计入贡献返点余额
-                    : database.clearUnclaimedRebateSync(uuid);     // 命令模式：仅清零未领取池
-                // 领取动作落一条 claim 记录，返利记录菜单的领取视图可见
-                if (claimed != null && claimed > 0) {
-                    database.addRebateRecordSync(uuid, "claim", claimed, null);
-                }
-                return claimed;
-            })
+        AsyncPool.supply(() -> claimCommand.isEmpty()
+                ? database.claimUnclaimedRebateSync(uuid)      // 计入贡献返点余额
+                : database.clearUnclaimedRebateSync(uuid))     // 命令模式：仅清零未领取池
             .thenAccept(claimed -> plugin.getScheduler().runAtPlayer(player, () -> {
                 if (claimed == null || claimed <= 0) {
                     player.sendMessage(plugin.getConfigManager().getMessage("points_rebate.claim_empty"));

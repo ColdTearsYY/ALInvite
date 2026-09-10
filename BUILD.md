@@ -84,9 +84,8 @@ mvn package
 
 #### 3. 构建结果
 构建成功后，在 `target/` 目录下会生成：
-- `ALInvite-1.0.5.jar` - 主插件文件
-- `ALInvite-1.0.5-sources.jar` - 源代码包
-- `ALInvite-1.0.5-javadoc.jar` - 文档包
+- `ALInvite-2.1.0.jar` - shaded 主插件文件（部署此文件）
+- `original-ALInvite-2.1.0.jar` - 未 shaded 的原始构建文件
 
 ### 方法二：使用 IDE 构建
 
@@ -113,7 +112,7 @@ mvn clean package
 
 if %ERRORLEVEL% EQU 0 (
     echo 构建成功！插件文件在 target/ 目录
-    echo 文件: ALInvite-1.0.5.jar
+    echo 文件: ALInvite-2.1.0.jar
 ) else (
     echo 构建失败，请检查错误信息
 )
@@ -130,7 +129,7 @@ mvn clean package
 
 if [ $? -eq 0 ]; then
     echo "构建成功！插件文件在 target/ 目录"
-    echo "文件: ALInvite-1.0.5.jar"
+    echo "文件: ALInvite-2.1.0.jar"
 else
     echo "构建失败，请检查错误信息"
 fi
@@ -201,7 +200,7 @@ mvn clean package -Dfile.encoding=UTF-8
 ### 修改版本号
 编辑 `pom.xml`:
 ```xml
-<version>1.0.5</version>  <!-- 修改为你想要的版本号 -->
+<version>2.1.0</version>  <!-- 发布版本号，需与 pom.xml 保持一致 -->
 ```
 
 ### 排除依赖项
@@ -235,7 +234,7 @@ mvn install
 ### 1. 部署到服务器
 ```bash
 # 将构建的 JAR 文件复制到服务器 plugins 目录
-cp target/ALInvite-1.0.5.jar /path/to/server/plugins/
+cp target/ALInvite-2.1.0.jar /path/to/server/plugins/
 ```
 
 ### 2. 重启服务器

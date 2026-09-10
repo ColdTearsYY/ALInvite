@@ -11,14 +11,19 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class PermissionGroupRewardListener implements Listener {
 
     private final ALInvite plugin;
-    private final Map<UUID, String> lastKnownGroup = new HashMap<>();
-    private final Map<UUID, List<String>> pendingOfflineMessages = new HashMap<>();
-    private final Map<UUID, List<double[]>> pendingOfflineMoney = new HashMap<>();
+    private final Map<UUID, String> lastKnownGroup = new ConcurrentHashMap<>();
+    private final Map<UUID, List<String>> pendingOfflineMessages = new ConcurrentHashMap<>();
+    private final Map<UUID, List<double[]>> pendingOfflineMoney = new ConcurrentHashMap<>();
 
     public PermissionGroupRewardListener(ALInvite plugin) {
         this.plugin = plugin;
@@ -61,7 +66,7 @@ public class PermissionGroupRewardListener implements Listener {
             }
         }
 
-        plugin.getScheduler().runGlobalDelayed(() ->
+        plugin.getScheduler().runAtPlayerDelayed(player, () ->
             checkGroupUpgrade(player, playerUuid), 20L);
     }
 
@@ -74,7 +79,7 @@ public class PermissionGroupRewardListener implements Listener {
         Player player = event.getPlayer();
         UUID playerUuid = player.getUniqueId();
 
-        plugin.getScheduler().runGlobalDelayed(() ->
+        plugin.getScheduler().runAtPlayerDelayed(player, () ->
             checkGroupUpgrade(player, playerUuid), 20L);
     }
 
@@ -108,19 +113,20 @@ public class PermissionGroupRewardListener implements Listener {
     }
 
     private void checkGroupUpgrade(Player player, UUID playerUuid, boolean forceCheck) {
+        // 此方法必须从玩家实体线程调用：先读取所有 Player 状态，再进入异步数据库链。
+        String checkMode = getCheckMode();
+        String currentGroup = getPlayerGroup(player, checkMode);
+        if (currentGroup == null) {
+            return;
+        }
+        String playerName = player.getName();
+        String rewardPath = "permission_group_rewards.rewards." + currentGroup;
+        if (!plugin.getConfigManager().getConfig().contains(rewardPath)) {
+            return;
+        }
+
         plugin.getDatabaseManager().getInviter(playerUuid).thenAccept(inviterUuid -> {
             if (inviterUuid == null) {
-                return;
-            }
-
-            String checkMode = getCheckMode();
-            String currentGroup = getPlayerGroup(player, checkMode);
-            if (currentGroup == null) {
-                return;
-            }
-
-            String rewardPath = "permission_group_rewards.rewards." + currentGroup;
-            if (!plugin.getConfigManager().getConfig().contains(rewardPath)) {
                 return;
             }
 
@@ -135,7 +141,7 @@ public class PermissionGroupRewardListener implements Listener {
                 int points = plugin.getConfigManager().getConfig().getInt(rewardPath + ".points", 0);
 
                 if (money > 0 || points > 0) {
-                    giveRewardIfNeeded(inviterUuid, money, points, player.getName(), currentGroup);
+                    giveRewardIfNeeded(inviterUuid, money, points, playerName, currentGroup);
                 }
 
                 plugin.getDatabaseManager().addClaimedPermissionGroup(inviterUuid, playerUuid, currentGroup)
@@ -207,11 +213,13 @@ public class PermissionGroupRewardListener implements Listener {
             .replace("{money}", String.valueOf(amount));
         addPendingOfflineMessage(playerUuid, msg);
 
-        pendingOfflineMoney.computeIfAbsent(playerUuid, k -> new ArrayList<>()).add(new double[]{amount});
+        pendingOfflineMoney.computeIfAbsent(playerUuid,
+            k -> new CopyOnWriteArrayList<>()).add(new double[]{amount});
     }
 
     private void addPendingOfflineMessage(UUID playerUuid, String message) {
-        pendingOfflineMessages.computeIfAbsent(playerUuid, k -> new ArrayList<>()).add(message);
+        pendingOfflineMessages.computeIfAbsent(playerUuid,
+            k -> new CopyOnWriteArrayList<>()).add(message);
     }
 
     private void givePointsToPlayer(UUID playerUuid, int amount, String newPlayerName, String group, boolean isOnline) {

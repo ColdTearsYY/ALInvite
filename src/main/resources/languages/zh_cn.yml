@@ -14,6 +14,7 @@ errors:
   veteran_cannot_bind: "&c你已经是老玩家，不能绑定其他老玩家的邀请码"
   no_invite_code: "&c你暂时未解锁邀请码"
   inviter_limit_reached: "&c该邀请码的主人已达到最大邀请人数限制，无法继续邀请"
+  invite_quota_exhausted: "&c该传火者当前没有可用邀请名额，请等待 24 小时恢复"
 
 # 指令
 commands:
@@ -50,6 +51,7 @@ commands:
       - "&e/alinvite admin clearcode <玩家> &7- 清除玩家邀请码"
       - "&e/alinvite admin addinvite <玩家> <数量> &7- 增加邀请次数"
       - "&e/alinvite admin reset <玩家> &7- 重置玩家邀请数据"
+      - "&e/alinvite admin punish <被邀请人> [原因] &7- 确认违规后执行连带处罚（不自动监听封禁）"
       - "&e/alinvite admin announce <玩家> <里程碑值> &7- 发送全服公告"
       - "&e/alinvite admin rebate <玩家> &7- 打开该玩家的返利记录菜单"
       - "&e/alinvite admin unclaimed <玩家> &7- 查看未领取返点余额"
@@ -73,6 +75,10 @@ commands:
     contribution_exchange_failed: "&a已扣除玩家 {player} 的贡献返点: {amount} 点券，但点券发放失败"
     contribution_player_exchanged: "&a您以花费贡献返点: {amount}，兑换点券: {amount}点券"
     contribution_player_deducted: "&a您的贡献返点已被扣除: {amount} 点券"
+    punish_success: "&a已对被邀请人 {invitee} 执行连带处罚，邀请人 {inviter} 的邀请统计已扣减"
+    punish_already: "&e被邀请人 {invitee} 已经执行过连带处罚，无需重复操作"
+    punish_not_found: "&c找不到该玩家的有效邀请关系"
+    punish_usage: "&c用法: /alinvite admin punish <被邀请人> [原因]"
 
 # 绑定 / 输入对话框
 dialog:
@@ -152,11 +158,8 @@ menu:
     days: "{value}天"
   rebate:
     date_format: "yyyy年M月d日 HH:mm"
-    view_rebates: "返利记录"
-    view_claims: "领取记录"
     record_text: "&7为你提供了 &e{value} &7点券返利"
-    record_text_claim: "&7你领取了 &e{value} &7点券返利"
-    empty_title: "&e暂无返利记录"
-    empty: "&7你获得的返利会记录在这里"
-    empty_title_claim: "&e暂无领取记录"
-    empty_claim: "&7你的领取记录会显示在这里"
+    empty_title: "&e暂无记录"
+    empty: "&7你的返利与领取操作会记录在这里"
+    view_rebates: "返利到账"
+    view_claims: "领取操作"

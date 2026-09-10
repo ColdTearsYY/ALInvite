@@ -46,7 +46,6 @@ public class ALInvite extends JavaPlugin {
     private RedisManager redisManager;
     private CrossServerSync crossServerSync;
     private int permissionGroupCheckTaskId = -1;
-    private int rebateRecordCleanupTaskId = -1;
 
     public static ALInvite getInstance() {
         return instance;
@@ -101,7 +100,6 @@ public class ALInvite extends JavaPlugin {
             initAPI();
 
             schedulePermissionGroupCheck();
-            scheduleRebateRecordCleanup();
 
             printLoadStatus();
         } catch (Exception e) {
@@ -148,8 +146,8 @@ public class ALInvite extends JavaPlugin {
         getLogger().info(ColorUtil.translate("&6 &r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e插件名称 &7» &fALInvite &7- &e邀请激励系统&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e插件版本 &7» &f" + getDescription().getVersion() + "&r"));
-        getLogger().info(ColorUtil.translate("&6   &f▪ &e支持版本 &7» &f1.20.1 &7- &f1.21.11&r"));
-        getLogger().info(ColorUtil.translate("&6   &f▪ &e数据库类型 &7» &f" + configManager.getConfig().getString("database.type", "sqlite").toUpperCase() + "&r"));
+        getLogger().info(ColorUtil.translate("&6   &f▪ &e支持版本 &7» &f1.20.1+ &7- &fLophine 26.2&r"));
+        getLogger().info(ColorUtil.translate("&6   &f▪ &e数据库类型 &7» &f" + configManager.getDatabaseConfig().getString("database.type", "sqlite").toUpperCase() + "&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e调度后端 &7» &f" + (scheduler != null && scheduler.isFolia() ? "Folia" : "传统调度器") + "&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e服务器标识 &7» &f" + configManager.getServerAlias() + " &7(" + configManager.getServerId() + (configManager.isMasterServer() ? " / 主服" : "") + ")&r"));
         getLogger().info(ColorUtil.translate("&6 &r"));
@@ -168,7 +166,7 @@ public class ALInvite extends JavaPlugin {
         int menuCount = menuManager.getLoader().getAll().size();
         getLogger().info(ColorUtil.translate("&6  &a✓ &f菜单配置       &7| &a已加载 &f" + menuCount + " &7个菜单&r"));
 
-        String pointsType = configManager.getConfig().getString("points.type", "playerpoints");
+        String pointsType = configManager.getConfig().getString("economy.points_type", "PLAYERPOINTS");
         getLogger().info(ColorUtil.translate("&6  &a✓ &f点券系统       &7| &a" + pointsType.toUpperCase() + "&r"));
 
         boolean announcementsEnabled = configManager.getConfig().getBoolean("announcements.enabled", true);
@@ -218,11 +216,10 @@ public class ALInvite extends JavaPlugin {
     }
 
     private void initManagers() {
-        // 取消旧调度器的全部注册任务（防止 reload 后旧定时器泄漏）
+        // 重建前先取消旧调度任务，防止 reload 后旧任务继续访问已替换的 GUI/数据库对象。
         if (scheduler != null) {
             scheduler.cancelAll();
         }
-        // 重建前先停掉旧管理器的定时任务
         if (leaderboardManager != null) {
             leaderboardManager.shutdown();
         }
@@ -247,7 +244,6 @@ public class ALInvite extends JavaPlugin {
 
     /** 初始化 Redis 跨服同步（database.yml redis 段，默认关闭）。 */
     private void initRedis() {
-        // 关闭旧实例（reload 场景防连接泄漏）
         if (redisManager != null) {
             redisManager.close();
             redisManager = null;
@@ -297,34 +293,10 @@ public class ALInvite extends JavaPlugin {
         int interval = configManager.getConfig().getInt("permission_group_rewards.check_interval", 10) * 20;
         permissionGroupCheckTaskId = scheduler.runGlobalTimer(() -> {
             for (Player player : Bukkit.getOnlinePlayers()) {
-                permissionGroupRewardListener.checkOnlinePlayerPermissionGroup(player);
+                scheduler.runAtPlayer(player, () ->
+                    permissionGroupRewardListener.checkOnlinePlayerPermissionGroup(player));
             }
         }, interval, interval);
-    }
-
-    /**
-     * 定时清理超期返利/领取记录：启动 1 分钟后先跑一次，之后每 6 小时一次。
-     * 每次执行时重读 points_rebate.record_retention_days——改天数或改成 0（永久保留）无需重启。
-     */
-    private void scheduleRebateRecordCleanup() {
-        if (rebateRecordCleanupTaskId != -1 && scheduler != null) {
-            scheduler.cancel(rebateRecordCleanupTaskId);
-            rebateRecordCleanupTaskId = -1;
-        }
-        long minute = 20L * 60;
-        long sixHours = 20L * 60 * 60 * 6;
-        rebateRecordCleanupTaskId = scheduler.runAsyncTimer(() -> {
-            int retentionDays = configManager.getConfig()
-                .getInt("points_rebate.record_retention_days", 30);
-            if (retentionDays <= 0) {
-                return;
-            }
-            int deleted = databaseManager.cleanupRebateRecordsSync(retentionDays);
-            if (deleted > 0) {
-                getLogger().info("已清理 " + deleted + " 条超期返利/领取记录（保留最近 "
-                    + retentionDays + " 天）");
-            }
-        }, minute, sixHours);
     }
 
     public void reload() {
@@ -334,17 +306,15 @@ public class ALInvite extends JavaPlugin {
                 scheduler.cancel(permissionGroupCheckTaskId);
                 permissionGroupCheckTaskId = -1;
             }
-            // 注销所有旧监听器（持有旧 Manager 引用，不注销会导致菜单不可点）
             org.bukkit.event.HandlerList.unregisterAll((org.bukkit.plugin.Plugin) this);
-
             databaseManager.close();
             configManager.loadAll();
             initDatabase();
             initManagers();
+            initCommands();
             initListeners();
             initPlaceholder();
             schedulePermissionGroupCheck();
-            scheduleRebateRecordCleanup();
         } catch (Exception e) {
             getLogger().severe("Reload failed: " + e.getMessage());
             e.printStackTrace();

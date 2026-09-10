@@ -263,13 +263,15 @@ public class MilestoneManager {
             case "WORLD" -> scheduler().runAtPlayer(player, () -> {
                 String personalized = ConfigManager.colorize(template, player);
                 for (Player onlinePlayer : player.getWorld().getPlayers()) {
-                    onlinePlayer.sendMessage(ConfigManager.colorize(personalized, onlinePlayer));
+                    scheduler().runAtPlayer(onlinePlayer, () ->
+                        onlinePlayer.sendMessage(ConfigManager.colorize(personalized, onlinePlayer)));
                 }
             });
             case "CONSOLE" -> plugin.getLogger().info(ConfigManager.colorize(template));
             default -> scheduler().runGlobal(() -> {
                 for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
-                    onlinePlayer.sendMessage(ConfigManager.colorize(template, onlinePlayer));
+                    scheduler().runAtPlayer(onlinePlayer, () ->
+                        onlinePlayer.sendMessage(ConfigManager.colorize(template, onlinePlayer)));
                 }
                 // 跨服广播：受 announcements.cross_server_sync 开关控制，同步到集群内其它服务器
                 if (plugin.getSync() != null

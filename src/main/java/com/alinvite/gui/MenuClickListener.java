@@ -136,7 +136,6 @@ public class MenuClickListener implements Listener {
         menuManager.getSessions().clearAll(player.getUniqueId());
         menuManager.getPages().clear(player.getUniqueId());
         cooldowns.clear(player.getUniqueId());
-        menuManager.clearPlayerState(player.getUniqueId());
     }
 
     private String clickKeyOf(ClickType clickType) {

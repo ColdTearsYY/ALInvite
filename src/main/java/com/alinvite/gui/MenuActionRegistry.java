@@ -71,7 +71,6 @@ public class MenuActionRegistry {
 
         register("claim_rebate", (player, value) -> plugin.getPointsRebateManager().claimRebate(player));
         register("toggle_rebate_view", (player, value) -> plugin.getMenuManager().toggleRebateView(player));
-        register("toggle_admin_rebate_view", (player, value) -> plugin.getMenuManager().toggleAdminRebateView(player));
 
         register("close", (player, value) -> player.closeInventory());
         register("silent-close", (player, value) -> player.closeInventory());

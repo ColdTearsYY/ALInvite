@@ -108,7 +108,7 @@ public class AutoVeteranManager {
     private void startScheduler() {
         shutdown();
         long intervalTicks = checkInterval * 20L;
-        checkTaskId = plugin.getScheduler().runAsyncTimer(this::checkAllOnlinePlayers, 100L, intervalTicks);
+        checkTaskId = plugin.getScheduler().runGlobalTimer(this::checkAllOnlinePlayers, 100L, intervalTicks);
     }
 
     /** 取消定时检查任务。 */
@@ -124,10 +124,6 @@ public class AutoVeteranManager {
      */
     private void checkAllOnlinePlayers() {
         if (!enabled) return;
-        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            return;
-        }
-
         for (Player player : Bukkit.getOnlinePlayers()) {
             // PAPI 占位符解析切实体线程执行，避免异步线程解析
             plugin.getScheduler().runAtPlayer(player, () -> checkPlayer(player));
@@ -139,7 +135,6 @@ public class AutoVeteranManager {
      */
     public void checkPlayer(Player player) {
         if (!enabled) return;
-        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return;
 
         UUID uuid = player.getUniqueId();
 
@@ -176,34 +171,35 @@ public class AutoVeteranManager {
      * @return 在线小时数，-1 表示解析失败
      */
     private double getPlaytimeHours(Player player) {
+        boolean useBuiltin = plugin.getConfigManager().getConfig()
+                .getBoolean("auto_veteran.use_builtin_statistic", true);
         try {
-            // 通过 PAPI 解析在线时间占位符
-            String result = PlaceholderAPI.setPlaceholders(player, playtimePlaceholder);
-
-            // 如果占位符未被解析（PAPI 返回原值），说明占位符不存在
-            if (result.equals(playtimePlaceholder)) {
-                if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
-                    plugin.getLogger().warning("自动老玩家: PAPI 占位符 " + playtimePlaceholder
-                            + " 未解析（可能插件未安装或占位符名称错误），玩家: " + player.getName());
+            if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+                String result = PlaceholderAPI.setPlaceholders(player, playtimePlaceholder);
+                if (!result.equals(playtimePlaceholder)) {
+                    double rawValue = parsePlaytimeValue(result);
+                    if (rawValue >= 0) {
+                        return convertToHours(rawValue);
+                    }
                 }
-                return -1;
             }
 
-            // 尝试解析为数值
-            double rawValue = parsePlaytimeValue(result);
-            if (rawValue < 0) {
-                return -1;
+            if (useBuiltin) {
+                // PLAY_ONE_MINUTE 使用游戏刻计数；读取发生在玩家实体线程。
+                return player.getStatistic(org.bukkit.Statistic.PLAY_ONE_MINUTE) / 72000.0;
             }
 
-            // 根据配置的单位转换为小时
-            return convertToHours(rawValue);
+            if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
+                plugin.getLogger().warning("自动老玩家: PAPI 占位符 " + playtimePlaceholder
+                        + " 未解析，且未启用内置 PLAY_ONE_MINUTE 回退，玩家: " + player.getName());
+            }
         } catch (Exception e) {
             if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
                 plugin.getLogger().warning("自动老玩家: 获取玩家 " + player.getName()
                         + " 的在线时间失败: " + e.getMessage());
             }
-            return -1;
         }
+        return -1;
     }
 
     /**
@@ -273,7 +269,8 @@ public class AutoVeteranManager {
                         .getString("auto_veteran.notify_message",
                                 "&a恭喜！您的在线时间已达到要求，现在可以生成邀请码邀请新玩家了！");
                 if (notifyMsg != null && !notifyMsg.isEmpty()) {
-                    player.sendMessage(ConfigManager.colorize(notifyMsg, player));
+                    plugin.getScheduler().runAtPlayer(player, () ->
+                        player.sendMessage(ConfigManager.colorize(notifyMsg, player)));
                 }
 
                 // 自动为玩家生成邀请码

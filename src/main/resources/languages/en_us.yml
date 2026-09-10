@@ -14,6 +14,7 @@ errors:
   veteran_cannot_bind: "&cYou are already a veteran player and cannot bind other veteran players' invite codes"
   no_invite_code: "&cYou have not unlocked the invite code yet"
   inviter_limit_reached: "&cThe owner of this invite code has reached the maximum invite limit"
+  invite_quota_exhausted: "&cThis veteran has no invite slot available. Please wait 24 hours for recovery"
 
 # Commands
 commands:
@@ -50,6 +51,7 @@ commands:
       - "&e/alinvite admin clearcode <player> &7- Clear player invite code"
       - "&e/alinvite admin addinvite <player> <amount> &7- Add invite count"
       - "&e/alinvite admin reset <player> &7- Reset player data"
+      - "&e/alinvite admin punish <invitee> [reason] &7- Apply confirmed liability penalty (manual; no ban listener)"
       - "&e/alinvite admin announce <player> <milestone> &7- Send announcement"
       - "&e/alinvite admin rebate <player> &7- Open the player's rebate history menu"
       - "&e/alinvite admin unclaimed <player> &7- View unclaimed rebate balance"
@@ -73,6 +75,10 @@ commands:
     contribution_exchange_failed: "&aDeducted contribution rebate from player {player}: {amount} points, but points issuance failed"
     contribution_player_exchanged: "&aYou spent contribution rebate: {amount}, exchanged for points: {amount} points"
     contribution_player_deducted: "&aYour contribution rebate has been deducted: {amount} points"
+    punish_success: "&aApplied liability penalty to invitee {invitee}; inviter {inviter}'s invite count was reduced"
+    punish_already: "&eInvitee {invitee} has already been penalized"
+    punish_not_found: "&cNo valid invite relationship found for this player"
+    punish_usage: "&cUsage: /alinvite admin punish <invitee> [reason]"
 
 # Dialog
 dialog:
@@ -152,11 +158,8 @@ menu:
     days: "{value} days"
   rebate:
     date_format: "MMM d, yyyy HH:mm"
-    view_rebates: "Rebate Records"
-    view_claims: "Claim Records"
     record_text: "&7You received &e{value} &7rebate points"
-    record_text_claim: "&7You claimed &e{value} &7rebate points"
-    empty_title: "&eNo rebate records"
-    empty: "&7Your rebates will be listed here"
-    empty_title_claim: "&eNo claim records"
-    empty_claim: "&7Your claims will be listed here"
+    empty_title: "&eNo records"
+    empty: "&7Your rebates and claim operations will be listed here"
+    view_rebates: "Rebate history"
+    view_claims: "Claim operations"

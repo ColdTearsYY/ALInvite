@@ -42,7 +42,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         String subCommand = args[0].toLowerCase();
 
         switch (subCommand) {
-            case "code" -> handleCode(sender);
+            case "code", "generate" -> handleCode(sender);
             case "bind" -> handleBind(sender, args);
             case "stats" -> handleStats(sender);
             case "contrib" -> handleContribution(sender);
@@ -111,23 +111,25 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             return;
         }
 
-        plugin.getInviteManager().bindInviteCode(player, code).thenAccept(result -> {
-            if (result.success) {
-                player.sendMessage(plugin.getConfigManager().getMessage("dialog.success"));
-            } else {
-                String reason = switch (result.type) {
-                    case NO_PERMISSION -> plugin.getConfigManager().getMessage("errors.no_permission");
-                    case CODE_NOT_FOUND -> plugin.getConfigManager().getMessage("dialog.fail");
-                    case ALREADY_USED -> plugin.getConfigManager().getMessage("errors.already_used");
-                    case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit");
-                    case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite");
-                    case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind");
-                    case INVITER_LIMIT_REACHED -> plugin.getConfigManager().getMessage("errors.inviter_limit_reached");
-                    default -> plugin.getConfigManager().getMessage("dialog.fail");
-                };
-                player.sendMessage(reason);
-            }
-        });
+        plugin.getInviteManager().bindInviteCode(player, code).thenAccept(result ->
+            plugin.getScheduler().runAtPlayer(player, () -> {
+                if (result.success) {
+                    player.sendMessage(plugin.getConfigManager().getMessage("dialog.success"));
+                } else {
+                    String reason = switch (result.type) {
+                        case NO_PERMISSION -> plugin.getConfigManager().getMessage("errors.no_permission");
+                        case CODE_NOT_FOUND -> plugin.getConfigManager().getMessage("dialog.fail");
+                        case ALREADY_USED -> plugin.getConfigManager().getMessage("errors.already_used");
+                        case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit");
+                        case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite");
+                        case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind");
+                        case INVITER_LIMIT_REACHED -> plugin.getConfigManager().getMessage("errors.inviter_limit_reached");
+                        case QUOTA_EXHAUSTED -> plugin.getConfigManager().getMessage("errors.invite_quota_exhausted");
+                        default -> plugin.getConfigManager().getMessage("dialog.fail");
+                    };
+                    player.sendMessage(reason);
+                }
+            }));
     }
 
     private void handleHelp(CommandSender sender) {
@@ -149,21 +151,21 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         plugin.getInviteManager().getTotalInvites(player.getUniqueId())
             .thenCompose(total -> plugin.getDatabaseManager().getClaimedMilestones(player.getUniqueId())
                 .thenCompose(claimedJson -> plugin.getDatabaseManager().getGiftId(player.getUniqueId())
-                    .thenApply(giftId -> {
-                        String giftName = "无";
-                        if (giftId != null) {
-                            var gift = plugin.getGiftManager().getGift(giftId);
-                            if (gift != null) {
-                                giftName = ConfigManager.colorize(gift.name);
+                    .thenCompose(giftId -> plugin.getInviteManager().getInviteCode(player.getUniqueId())
+                        .thenApply(inviteCode -> {
+                            String giftName = "无";
+                            if (giftId != null) {
+                                var gift = plugin.getGiftManager().getGift(giftId);
+                                if (gift != null) {
+                                    giftName = ConfigManager.colorize(gift.name);
+                                }
                             }
-                        }
-                        return new Object[]{total, claimedJson, giftName};
-                    })))
+                            return new Object[]{total, claimedJson, giftName, inviteCode};
+                        }))))
             .thenAccept(payload -> {
                 Object[] parts = (Object[]) payload;
-                String inviteCode = plugin.getPlaceholderResolver().getInviteCodeSync(player.getUniqueId());
                 String message = plugin.getConfigManager().getMessage("commands.stats", player)
-                    .replace("{invite_code}", inviteCode != null ? inviteCode : "N/A")
+                    .replace("{invite_code}", parts[3] == null ? "N/A" : String.valueOf(parts[3]))
                     .replace("{total}", String.valueOf(parts[0]))
                     .replace("{claimed_milestones}", formatClaimedMilestones((String) parts[1]))
                     .replace("{gift_name}", (String) parts[2]);
@@ -536,6 +538,34 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage(message);
                 });
             }
+            case "punish" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(plugin.getConfigManager().getMessage("commands.admin.punish_usage"));
+                    return;
+                }
+                UUID inviteeUuid = getPlayerUuid(args[2]);
+                String reason = args.length > 3
+                    ? String.join(" ", Arrays.copyOfRange(args, 3, args.length))
+                    : "管理员确认违规";
+                plugin.getDatabaseManager().punishInvitee(inviteeUuid, reason).thenAccept(result -> {
+                    String message;
+                    switch (result.status) {
+                        case SUCCESS -> {
+                            plugin.getCacheManager().invalidateStats(result.inviterUuid);
+                            message = plugin.getConfigManager().getMessage("commands.admin.punish_success")
+                                .replace("{invitee}", args[2])
+                                .replace("{inviter}", result.inviterUuid.toString());
+                        }
+                        case ALREADY_PUNISHED -> message = plugin.getConfigManager()
+                            .getMessage("commands.admin.punish_already").replace("{invitee}", args[2]);
+                        case NOT_FOUND -> message = plugin.getConfigManager()
+                            .getMessage("commands.admin.punish_not_found");
+                        case DISABLED -> message = "&c连带处罚功能已在配置中禁用";
+                        default -> message = "&c执行连带处罚失败，请检查控制台日志";
+                    }
+                    sender.sendMessage(ConfigManager.colorize(message));
+                });
+            }
             case "announce" -> {
                 if (args.length < 4) {
                     sender.sendMessage("用法: /alinvite admin announce <玩家> <里程碑值>");
@@ -582,11 +612,6 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     }
                     UUID targetUuid = getPlayerUuid(args[3]);
                     plugin.getDatabaseManager().clearUnclaimedRebate(targetUuid).thenAccept(cleared -> {
-                        // 核销也落一条 claim 记录（经手人=管理员），玩家侧领取视图可见
-                        if (cleared != null && cleared > 0) {
-                            plugin.getDatabaseManager().addRebateRecordSync(
-                                targetUuid, "claim", cleared, sender.getName());
-                        }
                         String msg = cleared != null && cleared > 0
                             ? "已核销玩家 " + args[3] + " 的未领取返点: " + String.format("%.2f", cleared) + " 点券（请确认已线下发放）"
                             : "玩家 " + args[3] + " 没有未领取的返点";
@@ -603,18 +628,17 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 });
             }
             case "rebate" -> {
-                // /alinvite admin rebate <玩家>    打开目标玩家的返利记录菜单（双视图 + 翻页）
-                if (!(sender instanceof Player admin)) {
-                    sender.sendMessage("该指令只能由玩家执行");
-                    return;
-                }
                 if (args.length < 3) {
                     sender.sendMessage("用法: /alinvite admin rebate <玩家>");
                     return;
                 }
-                String targetName = args[2];
-                UUID targetUuid = getPlayerUuid(targetName);
-                plugin.getMenuManager().openAdminRebateHistoryMenu(admin, targetUuid, targetName);
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null) {
+                    sender.sendMessage("玩家不存在或不在线");
+                    return;
+                }
+                plugin.getMenuManager().openRebateHistoryMenu(target);
+                sender.sendMessage("已为玩家 " + target.getName() + " 打开返利记录菜单");
             }
             case "checkgroup" -> {
                 if (args.length < 3) {
@@ -661,12 +685,12 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         List<String> completions = new ArrayList<>();
 
         if (args.length == 1) {
-            completions.addAll(Arrays.asList("code", "stats", "contrib", "buygift", "help", "admin", "givedj", "bind"));
+            completions.addAll(Arrays.asList("code", "generate", "stats", "contrib", "buygift", "help", "admin", "givedj", "bind"));
             return filterByInput(completions, args[0]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed"));
+            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "punish", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed"));
             return filterByInput(completions, args[1]);
         }
 
@@ -688,7 +712,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             return filterByInput(Arrays.asList("clear"), args[2]);
         }
 
-        if (args.length == 3 && (args[1].equalsIgnoreCase("reset") || args[1].equalsIgnoreCase("clearcode") || args[1].equalsIgnoreCase("checkgroup") || args[1].equalsIgnoreCase("rebate"))) {
+        if (args.length == 3 && (args[1].equalsIgnoreCase("reset") || args[1].equalsIgnoreCase("clearcode") || args[1].equalsIgnoreCase("punish") || args[1].equalsIgnoreCase("checkgroup") || args[1].equalsIgnoreCase("rebate"))) {
             return filterByInput(
                 Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()),
                 args[2]
@@ -709,6 +733,10 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()),
                 args[2]
             );
+        }
+
+        if (args.length == 4 && args[1].equalsIgnoreCase("punish")) {
+            return filterByInput(Arrays.asList("违规", "封禁", "刷号"), args[3]);
         }
 
         if (args.length == 4 && args[1].equalsIgnoreCase("announce")) {

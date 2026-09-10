@@ -5,6 +5,7 @@ api-version: '1.20'
 author: Allen_Linong
 description: 邀请新玩家入服的激励系统插件
 folia-supported: true
+softdepend: [PlaceholderAPI, LuckPerms, Vault, PlayerPoints]
 website: https://github.com/AllenLinong/ALInvite
 load: STARTUP
 
@@ -22,6 +23,15 @@ permissions:
   alinvite.buygift:
     description: 允许购买礼包
     default: true
+  alinvite.veteran:
+    description: 允许生成邀请码并成为传火者
+    default: false
+  alinvite.rebate:
+    description: 允许获得充值返点
+    default: false
+  alinvite.contribution:
+    description: 允许使用贡献返点
+    default: false
   alinvite.admin:
     description: 管理员权限
     default: op

@@ -71,34 +71,37 @@ public class MenuInputService implements Listener {
         String code = event.getMessage().trim();
 
         if (code.equalsIgnoreCase(cancelKey)) {
-            player.sendMessage(plugin.getConfigManager().getMessage("dialog.cancel", player));
+            plugin.getScheduler().runAtPlayer(player, () ->
+                player.sendMessage(plugin.getConfigManager().getMessage("dialog.cancel", player)));
             return;
         }
         if (code.isEmpty()) {
-            player.sendMessage(ConfigManager.colorize(plugin.getConfigManager()
-                .getMessageRaw("dialog.empty_code", player)));
+            plugin.getScheduler().runAtPlayer(player, () ->
+                player.sendMessage(ConfigManager.colorize(plugin.getConfigManager()
+                    .getMessageRaw("dialog.empty_code", player))));
             return;
         }
 
-        plugin.getInviteManager().bindInviteCode(player, code).thenAccept(result -> {
-            String message;
-            if (result.success) {
-                message = plugin.getConfigManager().getMessage("dialog.success", player);
-            } else {
-                message = switch (result.type) {
-                    case NO_PERMISSION -> plugin.getConfigManager().getMessage("errors.no_permission", player);
-                    case CODE_NOT_FOUND -> plugin.getConfigManager().getMessage("dialog.fail", player);
-                    case ALREADY_USED -> plugin.getConfigManager().getMessage("errors.already_used", player);
-                    case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit", player);
-                    case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite", player);
-                    case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind", player);
-                    case INVITER_LIMIT_REACHED -> plugin.getConfigManager().getMessage("errors.inviter_limit_reached", player);
-                    default -> plugin.getConfigManager().getMessage("dialog.fail", player);
-                };
-            }
-            final String finalMessage = message;
-            plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(finalMessage));
-        });
+        plugin.getInviteManager().bindInviteCode(player, code).thenAccept(result ->
+            plugin.getScheduler().runAtPlayer(player, () -> {
+                String message;
+                if (result.success) {
+                    message = plugin.getConfigManager().getMessage("dialog.success", player);
+                } else {
+                    message = switch (result.type) {
+                        case NO_PERMISSION -> plugin.getConfigManager().getMessage("errors.no_permission", player);
+                        case CODE_NOT_FOUND -> plugin.getConfigManager().getMessage("dialog.fail", player);
+                        case ALREADY_USED -> plugin.getConfigManager().getMessage("errors.already_used", player);
+                        case IP_LIMIT -> plugin.getConfigManager().getMessage("dialog.ip_limit", player);
+                        case SELF_INVITE -> plugin.getConfigManager().getMessage("dialog.self_invite", player);
+                        case VETERAN_CANNOT_BIND -> plugin.getConfigManager().getMessage("errors.veteran_cannot_bind", player);
+                        case INVITER_LIMIT_REACHED -> plugin.getConfigManager().getMessage("errors.inviter_limit_reached", player);
+                        case QUOTA_EXHAUSTED -> plugin.getConfigManager().getMessage("errors.invite_quota_exhausted", player);
+                        default -> plugin.getConfigManager().getMessage("dialog.fail", player);
+                    };
+                }
+                player.sendMessage(message);
+            }));
     }
 
     @EventHandler

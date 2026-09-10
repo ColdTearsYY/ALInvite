@@ -87,7 +87,7 @@ public class CrossServerSync implements DatabaseManager.DataChangeListener {
                 plugin.getScheduler().runGlobal(() -> {
                     String line = ConfigManager.colorize("&8[&e" + alias + "&8]&r " + message);
                     for (Player player : Bukkit.getOnlinePlayers()) {
-                        player.sendMessage(line);
+                        plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(line));
                     }
                 });
             }

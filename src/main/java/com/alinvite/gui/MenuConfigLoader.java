@@ -23,7 +23,7 @@ import java.util.Map;
 public class MenuConfigLoader {
 
     public static final int CONFIG_VERSION = 1;
-    public static final List<String> DEFAULT_MENUS = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP, MenuNames.REBATE_HISTORY, MenuNames.ADMIN_REBATE_HISTORY);
+    public static final List<String> DEFAULT_MENUS = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP, MenuNames.REBATE_HISTORY);
     private static final List<String> LEGACY_MENU_KEYS = List.of("main_menu", "veteran_menu", "shop_menu");
 
     private final ALInvite plugin;
@@ -77,11 +77,6 @@ public class MenuConfigLoader {
             for (String menuName : DEFAULT_MENUS) {
                 saveDefaultResource(dir, menuName);
             }
-        }
-
-        // 补齐缺失的默认菜单文件（如升级后新增的 rebate_history）
-        for (String menuName : DEFAULT_MENUS) {
-            saveDefaultResource(dir, menuName);
         }
 
         Map<String, MenuConfig> loaded = new LinkedHashMap<>();

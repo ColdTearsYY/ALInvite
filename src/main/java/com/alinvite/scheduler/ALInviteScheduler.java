@@ -118,13 +118,24 @@ public final class ALInviteScheduler {
      */
     public <T> CompletableFuture<T> supplyAtPlayer(Player player, Supplier<T> supplier) {
         CompletableFuture<T> future = new CompletableFuture<>();
-        runAtEntity(player, () -> {
-            try {
-                future.complete(supplier.get());
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
-            }
-        });
+        if (FOLIA) {
+            player.getScheduler().run(plugin, ignored -> {
+                try {
+                    future.complete(supplier.get());
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            }, () -> future.completeExceptionally(
+                new java.util.concurrent.CancellationException("玩家已退出，实体任务未执行")));
+        } else {
+            runAtEntity(player, () -> {
+                try {
+                    future.complete(supplier.get());
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
+                }
+            });
+        }
         return future;
     }
 

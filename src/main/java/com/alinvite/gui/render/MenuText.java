@@ -29,7 +29,7 @@ public final class MenuText {
             "milestone_name", "milestone_required", "milestone_status",
             "current", "required", "remaining",
             "price_money", "price_points", "duration_text", "duration_days",
-            "unclaimed_rebate", "rebate_rate", "view_name", "toggle_target", "target_name",
+            "unclaimed_rebate", "rebate_rate", "view_name", "toggle_target",
             "record_time", "record_text", "record_source", "record_value",
             "reward_lore");
 
@@ -127,32 +127,23 @@ public final class MenuText {
         return out;
     }
 
-    /**
-     * 解析动作串中的上下文占位符（供 PDC 写入前调用）。
-     * 与 render 不同：不删行、不走 PAPI（动作在执行时才需要 PAPI 的极少）。
-     * 未命中的内部占位符保留原文（由执行端兜底处理）。
-     */
+    /** 解析动作串中的上下文占位符，供 PDC 写入前调用。 */
     public static String renderActionStr(String action, RenderContext context) {
-        if (action == null) {
-            return null;
-        }
+        if (action == null) return null;
         String result = action;
         for (Map.Entry<String, String> entry : context.strings().entrySet()) {
             result = result.replace("%" + entry.getKey() + "%", entry.getValue())
-                    .replace("{" + entry.getKey() + "}", entry.getValue());
+                .replace("{" + entry.getKey() + "}", entry.getValue());
         }
         return result;
     }
 
-    /** 解析动作列表中的占位符。 */
-    public static java.util.List<String> renderActionList(java.util.List<String> actions, RenderContext context) {
-        if (actions == null) {
-            return List.of();
-        }
-        java.util.List<String> out = new ArrayList<>();
-        for (String a : actions) {
-            String r = renderActionStr(a, context);
-            out.add(r != null ? r : a);
+    public static List<String> renderActionList(List<String> actions, RenderContext context) {
+        if (actions == null) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String action : actions) {
+            String resolved = renderActionStr(action, context);
+            out.add(resolved == null ? action : resolved);
         }
         return out;
     }

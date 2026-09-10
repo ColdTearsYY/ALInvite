@@ -22,6 +22,17 @@
 | ⚡ **Folia兼容性**        | 完全支持Folia多线程服务器，性能优化      |
 | 🚀 **性能优化**           | 数据库索引、缓存、异步处理优化           |
 
+## 🔄 v2.1.0 传火/Folia 26.2 升级说明（2026-09）
+
+本版本在 v2.0.0 的 Folia 调度与数据层重构基础上，按 ourTravel「传火邀请制」实施：
+
+- **兼容目标**：保持 `api-version: '1.20'` 与 `folia-supported: true`，使用 Folia Global/Entity/Async 调度器；已在 Java 21 下构建，可运行于 test-server 的 Lophine 26.2 / Java 25。
+- **传火配额**：每名传火者默认 1 个邀请名额，用完后每 24 小时恢复 1 个；名额刷新、邀请记录、邀请总数在 SQLite/MySQL 事务中一起提交，避免并发/跨服超发。
+- **奖励默认值**：新人礼包为面包 32、石镐 1、火把 16、PlayerPoints 20；邀请 1/3/10 人里程碑分别为 10/50/200 点券，默认手动领取。
+- **24 小时解锁**：优先使用 PlaceholderAPI 在线时长占位符；PAPI 不存在或占位符未解析时回退 Bukkit `PLAY_ONE_MINUTE` 统计。
+- **处罚审计**：`/alinvite admin punish <被邀请人> [原因]` 由管理员确认违规后手动执行；记录不会删除，重复执行不会重复扣减。插件不自动监听封禁。
+- **白名单边界**：绑定成功后可执行配置的 `whitelist add {player}`。但原生 `white-list=true` 会在登录前拦截不在白名单的新人，插件无法让新人仅凭邀请码首次登录；请使用代理门禁、临时白名单或预先导入账号，绑定后的登记只对后续连接生效。
+
 ## 🔄 v2.0.0 重构说明（2026-09）
 
 本版本对调度器、GUI、数据层做了全面重构（架构方案见 [REFACTOR_PLAN.md](REFACTOR_PLAN.md)）：
@@ -52,8 +63,8 @@
 
 | 项目                  | 要求                           |
 | ------------------- | ---------------------------- |
-| **Minecraft 服务器版本** | 1.20.1 - 1.21.11             |
-| **Java 版本**         | **17~21+（建议java21）**                      |
+| **Minecraft 服务器版本** | 1.20.1+（目标：Lophine/Folia 26.2） |
+| **Java 版本**         | **21+（Lophine 26.2 测试服使用 Java 25）** |
 | **服务器类型**           | 支持 Folia（推荐）或 Paper          |
 | **可选依赖**            | PlaceholderAPI、LuckPerms（可选） |
 
@@ -227,6 +238,7 @@ main_menu:
 | `/alinvite admin clearcode <玩家>`      | `alinvite.admin` | 清除玩家邀请码      |
 | `/alinvite admin addinvite <玩家> <数量>` | `alinvite.admin` | 增加邀请次数       |
 | `/alinvite admin reset <玩家>`          | `alinvite.admin` | 重置玩家邀请数据     |
+| `/alinvite admin punish <被邀请人> [原因]` | `alinvite.admin` | 确认违规后执行连带处罚（不自动监听封禁） |
 | `/alinvite admin announce`            | `alinvite.admin` | 发送全服公告       |
 | `/alinvite givedj <玩家> <金额>`          | `alinvite.admin` | 给玩家充值点券并处理返点 |
 

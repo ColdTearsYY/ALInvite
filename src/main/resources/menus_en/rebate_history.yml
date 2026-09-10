@@ -10,8 +10,18 @@ rebate_history:
     - "#RRRRRRR#"
     - "#RRRRRRR#"
     - "#RRRRRRR#"
-    - "P#X#A#H#N"
+    - "P##X#B#HN"
   items:
+    A:
+      material: 'BOOK'
+      custom_model_data: 0
+      name: "&e&l%toggle_target%"
+      lore:
+        - "&7Current view: &f%view_name%"
+        - "&7Left click to switch"
+      triggers:
+        left:
+          - 'toggle_rebate_view'
     T:
       material: 'NAME_TAG'
       custom_model_data: 0
@@ -36,33 +46,16 @@ rebate_history:
         - "&6▶ &8Rebate Received"
         - "&e▸ %record_text%"
         - "&7Source player: &f%record_source%"
-      states:
-        claim:
-          material: 'BOOK'
-          name: "&b&l%record_time%"
-          lore:
-            - "&b▶ &8Claim Record"
-            - "&e▸ %record_text%"
-            - "&7Handled by: &f%record_source%"
-    A:
-      material: 'LEVER'
+    B:
+      material: 'ARROW'
       custom_model_data: 0
-      name: "&e&lToggle View"
+      name: "&a&lBack"
       lore:
-        - "&7Current view: &e%view_name%"
-        - ""
-        - "&7Click to switch display content"
-      states:
-        claim:
-          material: 'REPEATER'
-          name: "&b&lToggle View"
-          lore:
-            - "&7Current view: &b%view_name%"
-            - ""
-            - "&7Click to switch display content"
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fReturn to the previous menu"
       triggers:
         left:
-          - 'toggle_rebate_view'
+          - 'back'
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
@@ -105,3 +98,8 @@ rebate_history:
       triggers:
         left:
           - 'next_page'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '

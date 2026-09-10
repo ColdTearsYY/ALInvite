@@ -1,8 +1,7 @@
 # ALInvite 返利记录菜单
-# R 为动态槽位：显示记录条目（时间倒序）。
-#   返利视图用基础样式（PAPER/金色），领取视图用 states.claim 样式（BOOK/蓝色）。
-# A = 切换视图（返利记录 ↔ 领取记录），states.claim 为领取视图外观。
-# H = 返回主菜单，X = 关闭，P/N = 翻页。
+# R 为动态槽位：每条记录显示发放时间与金额（时间倒序，最近 100 条）。
+# 来源玩家未记录时 lore 中的来源行自动隐藏（条件行）。
+# B = 返回上个菜单，H = 返回主菜单，X = 关闭，P/N = 翻页。
 
 config_version: 1
 
@@ -14,8 +13,18 @@ rebate_history:
     - "#RRRRRRR#"
     - "#RRRRRRR#"
     - "#RRRRRRR#"
-    - "P#X#A#H#N"
+    - "P###H###N"
   items:
+    A:
+      material: 'BOOK'
+      custom_model_data: 0
+      name: "&e&l%toggle_target%"
+      lore:
+        - "&7当前视图: &f%view_name%"
+        - "&7左键切换记录类型"
+      triggers:
+        left:
+          - 'toggle_rebate_view'
     T:
       material: 'NAME_TAG'
       custom_model_data: 0
@@ -40,33 +49,6 @@ rebate_history:
         - "&6▶ &8返利到账"
         - "&e▸ %record_text%"
         - "&7来源玩家: &f%record_source%"
-      states:
-        claim:
-          material: 'BOOK'
-          name: "&b&l%record_time%"
-          lore:
-            - "&b▶ &8领取记录"
-            - "&e▸ %record_text%"
-            - "&7经手人: &f%record_source%"
-    A:
-      material: 'LEVER'
-      custom_model_data: 0
-      name: "&e&l切换视图"
-      lore:
-        - "&7当前视图: &e%view_name%"
-        - ""
-        - "&7点击切换显示内容"
-      states:
-        claim:
-          material: 'REPEATER'
-          name: "&b&l切换视图"
-          lore:
-            - "&7当前视图: &b%view_name%"
-            - ""
-            - "&7点击切换显示内容"
-      triggers:
-        left:
-          - 'toggle_rebate_view'
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
@@ -77,16 +59,6 @@ rebate_history:
       triggers:
         left:
           - 'open_main'
-    X:
-      material: 'BARRIER'
-      custom_model_data: 0
-      name: "&c&l关闭"
-      lore:
-        - "&6▶ &8操作"
-        - "&7• &a鼠标左键 &a➤ &f关闭菜单"
-      triggers:
-        left:
-          - 'close'
     P:
       material: 'ARROW'
       custom_model_data: 0
@@ -109,3 +81,8 @@ rebate_history:
       triggers:
         left:
           - 'next_page'
+
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      custom_model_data: 0
+      name: ' '
