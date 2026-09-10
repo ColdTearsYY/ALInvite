@@ -45,6 +45,11 @@ public class MenuManager {
         rebateHistoryRenderer.open(player);
     }
 
+    /** 切换返利记录的视图模式（返利到账 ↔ 领取操作）。 */
+    public void toggleRebateView(Player player) {
+        rebateHistoryRenderer.toggleView(player);
+    }
+
     /** 按菜单名打开（导航 back 使用）。 */
     public void openByName(Player player, String menuName) {
         if (menuName == null) {
