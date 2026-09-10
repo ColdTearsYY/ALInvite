@@ -128,6 +128,36 @@ class MenuConfigurationAuditTest {
     }
 
     @Test
+    void defaultMenusAreRegisteredAndNamedConsistently() {
+        // 文件名 ↔ MenuNames 常量 ↔ DEFAULT_MENUS 注册表 ↔ YAML 根键 四方必须一致：
+        //  - 不在 DEFAULT_MENUS → 服务器上缺文件时不会自动补；
+        //  - 根键与菜单名不一致 → loader.get(name) 返回 null，菜单打不开（报"菜单配置不存在"）。
+        List<String> expected = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP,
+                MenuNames.REBATE_HISTORY, MenuNames.ADMIN_REBATE_HISTORY);
+        List<String> errors = new ArrayList<>();
+        for (String name : expected) {
+            String file = name + ".yml";
+            if (!MENU_FILES.contains(file)) {
+                errors.add("MENU_FILES 审计列表缺少 " + file);
+            }
+            if (!MenuConfigLoader.DEFAULT_MENUS.contains(name)) {
+                errors.add("MenuConfigLoader.DEFAULT_MENUS 未注册 " + name);
+            }
+            for (String dir : List.of("menus", "menus_en")) {
+                YamlConfiguration config = load(resource(dir + "/" + file));
+                List<String> roots = new ArrayList<>(config.getKeys(false));
+                roots.remove("config_version");
+                if (roots.size() != 1 || !roots.contains(name)) {
+                    errors.add(dir + "/" + file + " 的根键应为 " + name + "，实际: " + roots);
+                }
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new AssertionError("菜单注册一致性审计失败:\n" + String.join("\n", errors));
+        }
+    }
+
+    @Test
     void multilineMessagesStayAsLists() {
         // 多行文案必须保持列表写法（一行一条）：代码端按 \n 拼接后发送
         for (String dir : List.of("languages/zh_cn.yml", "languages/en_us.yml")) {
