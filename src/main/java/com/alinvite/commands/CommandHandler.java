@@ -602,13 +602,32 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage("用法: /alinvite admin rebate <玩家>");
                     return;
                 }
-                Player target = Bukkit.getPlayer(args[2]);
-                if (target == null) {
-                    sender.sendMessage("玩家不存在或不在线");
-                    return;
-                }
-                plugin.getMenuManager().openRebateHistoryMenu(target);
-                sender.sendMessage("已为玩家 " + target.getName() + " 打开返利记录菜单");
+                UUID targetUuid = getPlayerUuid(args[2]);
+                String targetName = args[2];
+                plugin.getDatabaseManager().getUnclaimedRebate(targetUuid).thenAccept(unclaimed -> {
+                    sender.sendMessage("&6━━━━━━ " + targetName + " 的返利信息 ━━━━━━");
+                    sender.sendMessage("&e▸ 未领取余额: &a" + String.format("%.2f", unclaimed) + " 点券");
+                    sender.sendMessage("");
+                    plugin.getDatabaseManager().getRebateRecords(targetUuid, 10).thenAccept(records -> {
+                        if (records.isEmpty()) {
+                            sender.sendMessage("&7该玩家暂无返利记录");
+                            return;
+                        }
+                        sender.sendMessage("&6▸ 最近返利记录:");
+                        int rank = 1;
+                        for (var r : records) {
+                            String time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm")
+                                .format(java.util.Date.from(java.time.Instant.ofEpochMilli(r.createdAt())));
+                            sender.sendMessage("&7  " + rank + ". &f" + time
+                                + " &a+" + String.format("%.0f", r.amount())
+                                + (r.sourceName() != null ? " &7(来自 " + r.sourceName() + ")" : ""));
+                            rank++;
+                        }
+                        if (records.size() >= 10) {
+                            sender.sendMessage("&7  ... 仅显示最近 10 条");
+                        }
+                    });
+                });
             }
             case "checkgroup" -> {
                 if (args.length < 3) {
