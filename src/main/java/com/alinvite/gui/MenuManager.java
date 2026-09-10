@@ -24,6 +24,7 @@ public class MenuManager {
     private final com.alinvite.gui.render.VeteranMenuRenderer veteranRenderer;
     private final com.alinvite.gui.render.ShopMenuRenderer shopRenderer;
     private final com.alinvite.gui.render.RebateHistoryRenderer rebateHistoryRenderer;
+    private final com.alinvite.gui.render.AdminRebateHistoryRenderer adminRebateHistoryRenderer;
 
     public MenuManager(ALInvite plugin) {
         this.plugin = plugin;
@@ -39,6 +40,19 @@ public class MenuManager {
         this.veteranRenderer = new com.alinvite.gui.render.VeteranMenuRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
         this.shopRenderer = new com.alinvite.gui.render.ShopMenuRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
         this.rebateHistoryRenderer = new com.alinvite.gui.render.RebateHistoryRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
+        this.adminRebateHistoryRenderer = new com.alinvite.gui.render.AdminRebateHistoryRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
+    }
+
+    public void openAdminRebateHistoryMenu(Player admin, java.util.UUID targetUuid, String targetName) {
+        adminRebateHistoryRenderer.open(admin, targetUuid, targetName);
+    }
+
+    public void toggleAdminRebateView(Player admin) {
+        adminRebateHistoryRenderer.toggleView(admin);
+    }
+
+    public void clearAdminRebateState(java.util.UUID uuid) {
+        adminRebateHistoryRenderer.clearPlayerState(uuid);
     }
 
     public void openRebateHistoryMenu(Player player) {
@@ -130,6 +144,7 @@ public class MenuManager {
         pages.clearAll();
         cooldowns.clearAll();
         inputService.clearAll();
+        adminRebateHistoryRenderer.clearAllPlayerState();
     }
 
     public String currentMenuName(Player player) {

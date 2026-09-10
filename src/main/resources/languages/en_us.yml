@@ -163,3 +163,6 @@ menu:
     empty: "&7Your rebates and claim operations will be listed here"
     view_rebates: "Rebate history"
     view_claims: "Claim operations"
+    record_text_claim: "&7Claimed &e{value} &7points"
+    empty_title_claim: "&eNo claim records"
+    empty_claim: "&7Admin write-offs and player claims are recorded here"

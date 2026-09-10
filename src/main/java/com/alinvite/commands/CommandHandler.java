@@ -628,17 +628,16 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 });
             }
             case "rebate" -> {
+                if (!(sender instanceof Player admin)) {
+                    sender.sendMessage("该指令只能由玩家执行");
+                    return;
+                }
                 if (args.length < 3) {
                     sender.sendMessage("用法: /alinvite admin rebate <玩家>");
                     return;
                 }
-                Player target = Bukkit.getPlayer(args[2]);
-                if (target == null) {
-                    sender.sendMessage("玩家不存在或不在线");
-                    return;
-                }
-                plugin.getMenuManager().openRebateHistoryMenu(target);
-                sender.sendMessage("已为玩家 " + target.getName() + " 打开返利记录菜单");
+                UUID targetUuid = getPlayerUuid(args[2]);
+                plugin.getMenuManager().openAdminRebateHistoryMenu(admin, targetUuid, args[2]);
             }
             case "checkgroup" -> {
                 if (args.length < 3) {

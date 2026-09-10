@@ -163,3 +163,6 @@ menu:
     empty: "&7你的返利与领取操作会记录在这里"
     view_rebates: "返利到账"
     view_claims: "领取操作"
+    record_text_claim: "&7领取了 &e{value} &7点券"
+    empty_title_claim: "&e暂无领取记录"
+    empty_claim: "&7管理员核销和玩家领取会记录在这里"

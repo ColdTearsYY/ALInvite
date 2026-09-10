@@ -10,7 +10,7 @@ rebate_history:
     - "#RRRRRRR#"
     - "#RRRRRRR#"
     - "#RRRRRRR#"
-    - "P##X#B#HN"
+    - "P#X#A#H#N"
   items:
     A:
       material: 'BOOK'
