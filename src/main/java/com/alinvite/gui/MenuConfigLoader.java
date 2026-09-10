@@ -79,6 +79,11 @@ public class MenuConfigLoader {
             }
         }
 
+        // 补齐缺失的默认菜单文件（如升级后新增的 rebate_history）
+        for (String menuName : DEFAULT_MENUS) {
+            saveDefaultResource(dir, menuName);
+        }
+
         Map<String, MenuConfig> loaded = new LinkedHashMap<>();
         File[] files = dir.listFiles((d, name) -> name.endsWith(".yml"));
         if (files == null) {
