@@ -91,9 +91,9 @@ public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHist
             .add("prev_page_hint", result.currentPage() <= 1 ? langRaw("menu.page.first_page") : langRaw("menu.page.prev_hint"))
             .add("next_page_hint", result.currentPage() >= result.totalPages() ? langRaw("menu.page.last_page") : langRaw("menu.page.next_hint"))
             .add("view_name", claims ? langRaw("menu.rebate.view_claims") : langRaw("menu.rebate.view_rebates"));
-        MenuItem toggle = config.getItems().get('A');
+        MenuItem toggle = config.getItems().get("A");
         if (toggle != null) for (int slot : config.slotsOf('A')) setItemSafe(inventory, slot, MenuItems.build(plugin, pdc(), toggle, toggle.getState(claims ? "claim" : null), pageContext));
-        MenuItem recordItem = config.getItems().get('R');
+        MenuItem recordItem = config.getItems().get("R");
         if (recordItem == null) return;
         MenuItem.StateStyle state = recordItem.getState(claims ? "claim" : null);
         var format = java.time.format.DateTimeFormatter.ofPattern(langRaw("menu.rebate.date_format"), java.util.Locale.CHINA);

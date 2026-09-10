@@ -300,7 +300,7 @@ public class PointsRebateManager {
     private CompletableFuture<Boolean> parkRebate(UUID playerUuid, double amount, String targetPlayer, double originalAmount, boolean pointsMode) {
         return AsyncPool.supply(() -> {
             database.addUnclaimedRebateSync(playerUuid, amount);
-            database.addRebateRecordSync(playerUuid, amount, targetPlayer);
+            database.addRebateRecordSync(playerUuid, "rebate", amount, targetPlayer);
             database.updateTotalRebatePointsSync(playerUuid, amount);
             return true;
         }).thenApply(success -> {
@@ -350,6 +350,7 @@ public class PointsRebateManager {
                     return;
                 }
                 String displayAmount = formatAmount(claimed);
+                AsyncPool.run(() -> database.addRebateRecordSync(uuid, "claim", claimed, player.getName()));
                 if (!claimCommand.isEmpty()) {
                     // 点券模式 + 已配置发放命令：全局线程执行，适配任意点券插件
                     String cmd = claimCommand

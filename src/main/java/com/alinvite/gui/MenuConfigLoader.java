@@ -74,9 +74,11 @@ public class MenuConfigLoader {
         if (!dir.exists() && !migrateLegacy(dir)) {
             dir = menuDirFile();
             dir.mkdirs();
-            for (String menuName : DEFAULT_MENUS) {
-                saveDefaultResource(dir, menuName);
-            }
+        }
+        // 不仅首次安装，升级时也补齐新增菜单文件。
+        dir.mkdirs();
+        for (String menuName : DEFAULT_MENUS) {
+            saveDefaultResource(dir, menuName);
         }
 
         Map<String, MenuConfig> loaded = new LinkedHashMap<>();

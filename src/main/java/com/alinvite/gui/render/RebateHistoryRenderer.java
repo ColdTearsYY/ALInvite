@@ -74,7 +74,7 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
             .add("view_name", claims ? langRaw("menu.rebate.view_claims") : langRaw("menu.rebate.view_rebates"))
             .add("toggle_target", claims ? langRaw("menu.rebate.view_rebates") : langRaw("menu.rebate.view_claims"));
 
-        MenuItem toggle = config.getItems().get('A');
+        MenuItem toggle = config.getItems().get("A");
         if (toggle != null) {
             for (int slot : config.slotsOf('A')) setItemSafe(inventory, slot, MenuItems.build(plugin, pdc(), toggle, null, pageContext));
         }
