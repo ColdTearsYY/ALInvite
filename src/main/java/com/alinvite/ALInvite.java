@@ -216,7 +216,11 @@ public class ALInvite extends JavaPlugin {
     }
 
     private void initManagers() {
-        // 重建前先停掉旧管理器的定时任务，防止 reload 后旧定时器泄漏
+        // 取消旧调度器的全部注册任务（防止 reload 后旧定时器泄漏）
+        if (scheduler != null) {
+            scheduler.cancelAll();
+        }
+        // 重建前先停掉旧管理器的定时任务
         if (leaderboardManager != null) {
             leaderboardManager.shutdown();
         }
@@ -241,6 +245,11 @@ public class ALInvite extends JavaPlugin {
 
     /** 初始化 Redis 跨服同步（database.yml redis 段，默认关闭）。 */
     private void initRedis() {
+        // 关闭旧实例（reload 场景防连接泄漏）
+        if (redisManager != null) {
+            redisManager.close();
+            redisManager = null;
+        }
         if (!configManager.getDatabaseConfig().getBoolean("redis.enabled", false)) {
             return;
         }
