@@ -5,7 +5,11 @@ import com.alinvite.config.ConfigManager;
 import com.alinvite.utils.PapiDetector;
 import com.alinvite.utils.PlaceholderResolver;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -598,36 +602,88 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 });
             }
             case "rebate" -> {
+                if (!(sender instanceof Player admin)) {
+                    sender.sendMessage("该指令只能由玩家执行");
+                    return;
+                }
                 if (args.length < 3) {
                     sender.sendMessage("用法: /alinvite admin rebate <玩家>");
                     return;
                 }
-                UUID targetUuid = getPlayerUuid(args[2]);
                 String targetName = args[2];
-                plugin.getDatabaseManager().getUnclaimedRebate(targetUuid).thenAccept(unclaimed -> {
-                    sender.sendMessage("&6━━━━━━ " + targetName + " 的返利信息 ━━━━━━");
-                    sender.sendMessage("&e▸ 未领取余额: &a" + String.format("%.2f", unclaimed) + " 点券");
-                    sender.sendMessage("");
-                    plugin.getDatabaseManager().getRebateRecords(targetUuid, 10).thenAccept(records -> {
-                        if (records.isEmpty()) {
-                            sender.sendMessage("&7该玩家暂无返利记录");
-                            return;
-                        }
-                        sender.sendMessage("&6▸ 最近返利记录:");
-                        int rank = 1;
-                        for (var r : records) {
-                            String time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm")
-                                .format(java.util.Date.from(java.time.Instant.ofEpochMilli(r.createdAt())));
-                            sender.sendMessage("&7  " + rank + ". &f" + time
-                                + " &a+" + String.format("%.0f", r.amount())
-                                + (r.sourceName() != null ? " &7(来自 " + r.sourceName() + ")" : ""));
-                            rank++;
-                        }
-                        if (records.size() >= 10) {
-                            sender.sendMessage("&7  ... 仅显示最近 10 条");
-                        }
-                    });
-                });
+                UUID targetUuid = getPlayerUuid(targetName);
+                plugin.getDatabaseManager().getRebateRecords(targetUuid, 35).thenAccept(records ->
+                    plugin.getDatabaseManager().getUnclaimedRebate(targetUuid).thenAccept(unclaimed ->
+                        plugin.getScheduler().runAtPlayer(admin, () -> {
+                            // 构建菜单
+                            var title = ConfigManager.colorize("&8" + targetName + " 的返利记录");
+                            var inv = Bukkit.createInventory(admin, 54, title);
+
+                            // 背景
+                            var bg = new ItemStack(org.bukkit.Material.BLACK_STAINED_GLASS_PANE);
+                            var bgMeta = bg.getItemMeta();
+                            if (bgMeta != null) {
+                                bgMeta.setDisplayName(" ");
+                                bgMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES);
+                                bg.setItemMeta(bgMeta);
+                            }
+                            for (int i = 0; i < 54; i++) inv.setItem(i, bg);
+
+                            // 顶部汇总信息
+                            var info = new ItemStack(org.bukkit.Material.GOLD_INGOT);
+                            var im = info.getItemMeta();
+                            if (im != null) {
+                                im.setDisplayName(ConfigManager.colorize("&6&l" + targetName + " 的返利信息"));
+                                im.setLore(List.of(
+                                    ConfigManager.colorize("&e▸ 未领取: &a" + String.format("%.2f", unclaimed) + " 点券"),
+                                    ConfigManager.colorize("&7▸ 共 " + records.size() + " 条记录")));
+                                im.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES);
+                                info.setItemMeta(im);
+                            }
+                            inv.setItem(4, info);
+
+                            // 返利记录（从第 10 格起，每行 7 条）
+                            var fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm");
+                            var zone = java.time.ZoneId.systemDefault();
+                            int paperIndex = 0;
+                            for (var r : records) {
+                                int row = paperIndex / 7;
+                                int col = paperIndex % 7;
+                                int slot = 9 + row * 9 + 1 + col;
+                                if (slot >= 45) break;
+
+                                var record = new ItemStack(org.bukkit.Material.PAPER);
+                                var rm = record.getItemMeta();
+                                if (rm != null) {
+                                    String timeStr = fmt.format(java.time.Instant.ofEpochMilli(r.createdAt())
+                                        .atZone(zone).toLocalDateTime());
+                                    rm.setDisplayName(ConfigManager.colorize("&6" + timeStr));
+                                    List<String> recordLore = new ArrayList<>();
+                                    recordLore.add(ConfigManager.colorize("&a▸ 获得返利: &e" + String.format("%.0f", r.amount()) + " 点券"));
+                                    if (r.sourceName() != null && !r.sourceName().isEmpty()) {
+                                        recordLore.add(ConfigManager.colorize("&7来源: &f" + r.sourceName()));
+                                    }
+                                    rm.setLore(recordLore);
+                                    rm.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES);
+                                    record.setItemMeta(rm);
+                                }
+                                inv.setItem(slot, record);
+                                paperIndex++;
+                            }
+
+                            // 关闭按钮
+                            var closeBtn = new ItemStack(org.bukkit.Material.BARRIER);
+                            var closeMeta = closeBtn.getItemMeta();
+                            if (closeMeta != null) {
+                                closeMeta.setDisplayName(ConfigManager.colorize("&c关闭"));
+                                closeBtn.setItemMeta(closeMeta);
+                            }
+                            inv.setItem(49, closeBtn);
+
+                            admin.openInventory(inv);
+                        })
+                    )
+                );
             }
             case "checkgroup" -> {
                 if (args.length < 3) {
