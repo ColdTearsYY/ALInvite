@@ -148,7 +148,7 @@ public class ALInvite extends JavaPlugin {
         getLogger().info(ColorUtil.translate("&6 &r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e插件名称 &7» &fALInvite &7- &e邀请激励系统&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e插件版本 &7» &f" + getDescription().getVersion() + "&r"));
-        getLogger().info(ColorUtil.translate("&6   &f▪ &e支持版本 &7» &f1.20.1 &7- &f1.21.11&r"));
+        getLogger().info(ColorUtil.translate("&6   &f▪ &e支持版本 &7» &f1.20.1 &7- &f26.3&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e数据库类型 &7» &f" + configManager.getDatabaseConfig().getString("database.type", "sqlite").toUpperCase() + "&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e调度后端 &7» &f" + (scheduler != null && scheduler.isFolia() ? "Folia" : "传统调度器") + "&r"));
         getLogger().info(ColorUtil.translate("&6   &f▪ &e服务器标识 &7» &f" + configManager.getServerAlias() + " &7(" + configManager.getServerId() + (configManager.isMasterServer() ? " / 主服" : "") + ")&r"));
