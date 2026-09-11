@@ -1,7 +1,12 @@
+# ALInvite 管理员查看玩家返利记录菜单（/alinvite admin rebate <玩家>）
+# R 为动态槽位：显示目标玩家的记录条目（时间倒序）。
+#   返利视图用基础样式（PAPER/金色），领取视图用 states.claim 样式（BOOK/蓝色）。
+# T = 目标玩家汇总信息，A = 切换视图，H = 返回管理员自己的主菜单，X = 关闭，P/N = 翻页。
+
 config_version: 1
 
 admin_rebate_history:
-  title: "&6&l%target_name% 的返利记录"
+  title: "&6&l%target_name% 的记录"
   shape:
     - "####T####"
     - "#RRRRRRR#"
@@ -12,42 +17,74 @@ admin_rebate_history:
   items:
     T:
       material: 'GOLD_INGOT'
-      name: "&6&l%target_name% 的返利信息"
+      custom_model_data: 0
+      name: "&6&l%target_name% 的信息"
       lore:
-        - "&e▸ &7累计返点: &e%total_rebate%"
-        - "&a▸ &7未领取: &a%unclaimed_rebate%"
+        - "&6▶ &8玩家数据"
+        - "&e▸ &7目标玩家: &f%target_name%"
+        - "&e▸ &7累计返点: &e%total_rebate% 点券"
+        - "&a▸ &7未领取: &a%unclaimed_rebate% 点券"
         - "&6▸ &7返点比例: &e%rebate_rate%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a命令核销 &a➤ &f/alinvite admin unclaimed clear <玩家>"
     R:
       dynamic: true
       material: 'PAPER'
+      custom_model_data: 0
       name: "&6&l%record_time%"
       lore:
+        - "&6▶ &8返利到账"
         - "&e▸ %record_text%"
-        - "&7来源/经手人: &f%record_source%"
+        - "&e▸ &7来源玩家: &f%record_source%"
       states:
         claim:
           material: 'BOOK'
           name: "&b&l%record_time%"
+          lore:
+            - "&b▶ &8领取记录"
+            - "&e▸ %record_text%"
+            - "&e▸ &7经手人: &f%record_source%"
     A:
       material: 'LEVER'
+      custom_model_data: 0
       name: "&e&l切换视图"
       lore:
-        - "&7当前视图: &e%view_name%"
+        - "&6▶ &8视图"
+        - "&e▸ &7当前视图: &e%view_name%"
+        - ""
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       states:
         claim:
           material: 'REPEATER'
+          name: "&b&l切换视图"
+          lore:
+            - "&b▶ &8视图"
+            - "&b▸ &7当前视图: &b%view_name%"
+            - ""
+            - "&6▶ &8操作"
+            - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       triggers:
         left:
           - 'toggle_admin_rebate_view'
     H:
       material: 'OAK_DOOR'
+      custom_model_data: 0
       name: "&a&l返回主菜单"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f返回你的主菜单"
       triggers:
         left:
           - 'open_main'
     X:
       material: 'BARRIER'
+      custom_model_data: 0
       name: "&c&l关闭"
+      lore:
+        - "&6▶ &8操作"
+        - "&7• &a鼠标左键 &a➤ &f关闭菜单"
       triggers:
         left:
           - 'close'

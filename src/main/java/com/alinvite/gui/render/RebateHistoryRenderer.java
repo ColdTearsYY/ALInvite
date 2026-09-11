@@ -36,9 +36,11 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
     @Override
     protected String menuName() { return MenuNames.REBATE_HISTORY; }
 
+    /** 切换视图（返利到账 ↔ 领取操作）。页码归 1，两个视图的列表互不继承页码。 */
     public void toggleView(Player player) {
         UUID uuid = player.getUniqueId();
         claimViewToggle.put(uuid, !Boolean.TRUE.equals(claimViewToggle.get(uuid)));
+        pages.set(uuid, menuName(), 1);
         refresh(player);
     }
 
@@ -76,10 +78,14 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
 
         MenuItem toggle = config.getItems().get("A");
         if (toggle != null) {
-            for (int slot : config.slotsOf('A')) setItemSafe(inventory, slot, MenuItems.build(plugin, pdc(), toggle, null, pageContext));
+            MenuItem.StateStyle toggleState = toggle.getState(claims ? "claim" : null);
+            for (int slot : config.slotsOf('A')) {
+                setItemSafe(inventory, slot, MenuItems.build(plugin, pdc(), toggle, toggleState, pageContext));
+            }
         }
-        MenuItem recordItem = config.getItems().values().stream().filter(MenuItem::isDynamic).findFirst().orElse(null);
+        MenuItem recordItem = config.getItems().get("R");
         if (recordItem == null) return;
+        MenuItem.StateStyle recordState = recordItem.getState(claims ? "claim" : null);
 
         DateTimeFormatter format = DateTimeFormatter.ofPattern(langRaw("menu.rebate.date_format"), Locale.CHINA);
         TimeZone zone = TimeZone.getTimeZone(plugin.getConfigManager().getTimeZone());
@@ -88,13 +94,22 @@ public class RebateHistoryRenderer extends BaseMenuRenderer<RebateHistoryRendere
             RenderContext item = pageContext.copy()
                 .add("record_time", format.format(java.time.Instant.ofEpochMilli(record.createdAt()).atZone(zone.toZoneId())))
                 .add("record_value", formatAmount(record.amount()))
-                .add("record_text", langRaw("menu.rebate.record_text").replace("{value}", formatAmount(record.amount())));
+                .add("record_text", langRaw(claims ? "menu.rebate.record_text_claim" : "menu.rebate.record_text")
+                    .replace("{value}", formatAmount(record.amount())));
             if (record.sourceName() != null && !record.sourceName().isBlank()) item.add("record_source", record.sourceName());
-            setItemSafe(inventory, slots.get(index), MenuItems.build(plugin, pdc(), recordItem, recordItem.getState(null), item));
+            setItemSafe(inventory, slots.get(index), MenuItems.build(plugin, pdc(), recordItem, recordState, item));
         }
+
+        // 清空本页未占用的动态槽位（切视图或翻到较短页时移除残留条目）
+        for (int i = result.entries().size(); i < slots.size(); i++) {
+            setItemSafe(inventory, slots.get(i), null);
+        }
+
         if (result.entries().isEmpty()) {
-            RenderContext empty = pageContext.copy().add("record_time", langRaw("menu.rebate.empty_title")).add("record_text", langRaw("menu.rebate.empty"));
-            setItemSafe(inventory, slots.get(0), MenuItems.build(plugin, pdc(), recordItem, recordItem.getState(null), empty));
+            RenderContext empty = pageContext.copy()
+                .add("record_time", langRaw(claims ? "menu.rebate.empty_title_claim" : "menu.rebate.empty_title"))
+                .add("record_text", langRaw(claims ? "menu.rebate.empty_claim" : "menu.rebate.empty"));
+            setItemSafe(inventory, slots.get(0), MenuItems.build(plugin, pdc(), recordItem, recordState, empty));
         }
         renderPagingButtons(config, inventory, pageContext);
     }

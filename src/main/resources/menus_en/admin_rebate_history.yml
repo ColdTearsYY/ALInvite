@@ -1,7 +1,11 @@
+# ALInvite admin rebate history menu (/alinvite admin rebate <player>)
+# R displays the target player's records. Base style is rebate received;
+# states.claim is used for claim records.
+
 config_version: 1
 
 admin_rebate_history:
-  title: "&6&l%target_name%'s Rebate History"
+  title: "&6&l%target_name%'s Records"
   shape:
     - "####T####"
     - "#RRRRRRR#"
@@ -12,42 +16,74 @@ admin_rebate_history:
   items:
     T:
       material: 'GOLD_INGOT'
-      name: "&6&l%target_name%'s Rebate Info"
+      custom_model_data: 0
+      name: "&6&l%target_name%'s Information"
       lore:
-        - "&e▸ &7Total rebates: &e%total_rebate%"
-        - "&a▸ &7Unclaimed: &a%unclaimed_rebate%"
+        - "&6▶ &8Player Data"
+        - "&e▸ &7Target player: &f%target_name%"
+        - "&e▸ &7Total rebates: &e%total_rebate% points"
+        - "&a▸ &7Unclaimed: &a%unclaimed_rebate% points"
         - "&6▸ &7Rebate rate: &e%rebate_rate%"
+        - ""
+        - "&6▶ &8Actions"
+        - "&7• &aWrite-off &a➤ &f/alinvite admin unclaimed clear <player>"
     R:
       dynamic: true
       material: 'PAPER'
+      custom_model_data: 0
       name: "&6&l%record_time%"
       lore:
+        - "&6▶ &8Rebate Received"
         - "&e▸ %record_text%"
-        - "&7Source/handler: &f%record_source%"
+        - "&e▸ &7Source player: &f%record_source%"
       states:
         claim:
           material: 'BOOK'
           name: "&b&l%record_time%"
+          lore:
+            - "&b▶ &8Claim Record"
+            - "&e▸ %record_text%"
+            - "&e▸ &7Handled by: &f%record_source%"
     A:
       material: 'LEVER'
+      custom_model_data: 0
       name: "&e&lToggle View"
       lore:
-        - "&7Current view: &e%view_name%"
+        - "&6▶ &8View"
+        - "&e▸ &7Current view: &e%view_name%"
+        - ""
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fSwitch display content"
       states:
         claim:
           material: 'REPEATER'
+          name: "&b&lToggle View"
+          lore:
+            - "&b▶ &8View"
+            - "&b▸ &7Current view: &b%view_name%"
+            - ""
+            - "&6▶ &8Actions"
+            - "&7• &aLeft click &a➤ &fSwitch display content"
       triggers:
         left:
           - 'toggle_admin_rebate_view'
     H:
       material: 'OAK_DOOR'
+      custom_model_data: 0
       name: "&a&lBack to Main Menu"
+      lore:
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fReturn to your main menu"
       triggers:
         left:
           - 'open_main'
     X:
       material: 'BARRIER'
+      custom_model_data: 0
       name: "&c&lClose"
+      lore:
+        - "&6▶ &8Actions"
+        - "&7• &aLeft click &a➤ &fClose the menu"
       triggers:
         left:
           - 'close'

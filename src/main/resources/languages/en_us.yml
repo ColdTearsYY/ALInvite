@@ -110,6 +110,7 @@ milestone:
 # Recharge rebate
 points_rebate:
   claim_success: "&aClaimed &e{amount} &arebate points! Added to your contribution balance."
+  claim_success_command: "&aClaimed &e{amount} &arebate points! Issued to your points balance."
   claim_empty: "&7You have no pending rebates to claim"
   claim_blocked_cash: "&cCash-mode rebates cannot be claimed in-game. Contact an admin for an offline payout."
   rebate_pending_notify: "&aYou received &e{rebate_amount} &arebate points ({player} recharged). It is NOT credited automatically - claim it via &eRebate Center &ain the main menu"

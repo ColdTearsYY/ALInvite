@@ -43,9 +43,11 @@ public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHist
         open(admin);
     }
 
+    /** 切换视图（返利到账 ↔ 领取操作）。页码归 1，两个视图的列表互不继承页码。 */
     public void toggleView(Player admin) {
         UUID uuid = admin.getUniqueId();
         claimViewToggle.put(uuid, !Boolean.TRUE.equals(claimViewToggle.get(uuid)));
+        pages.set(uuid, menuName(), 1);
         refresh(admin);
     }
 
@@ -107,6 +109,12 @@ public class AdminRebateHistoryRenderer extends BaseMenuRenderer<AdminRebateHist
             if (record.sourceName() != null && !record.sourceName().isBlank()) item.add("record_source", record.sourceName());
             setItemSafe(inventory, slots.get(i), MenuItems.build(plugin, pdc(), recordItem, state, item));
         }
+
+        // 清空本页未占用的动态槽位（切视图或翻到较短页时移除残留条目）
+        for (int i = result.entries().size(); i < slots.size(); i++) {
+            setItemSafe(inventory, slots.get(i), null);
+        }
+
         if (result.entries().isEmpty()) {
             RenderContext empty = pageContext.copy().add("record_time", langRaw(claims ? "menu.rebate.empty_title_claim" : "menu.rebate.empty_title")).add("record_text", langRaw(claims ? "menu.rebate.empty_claim" : "menu.rebate.empty"));
             setItemSafe(inventory, slots.get(0), MenuItems.build(plugin, pdc(), recordItem, state, empty));

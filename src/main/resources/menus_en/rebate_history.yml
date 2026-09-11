@@ -19,6 +19,16 @@ rebate_history:
       lore:
         - "&7Current view: &f%view_name%"
         - "&7Left click to switch"
+      states:
+        claim:
+          material: 'REPEATER'
+          name: "&b&l%toggle_target%"
+          lore:
+            - "&b▶ &8View"
+            - "&b▸ &7Current view: &b%view_name%"
+            - ""
+            - "&6▶ &8Actions"
+            - "&7• &aLeft click &a➤ &fSwitch display content"
       triggers:
         left:
           - 'toggle_rebate_view'
@@ -45,7 +55,15 @@ rebate_history:
       lore:
         - "&6▶ &8Rebate Received"
         - "&e▸ %record_text%"
-        - "&7Source player: &f%record_source%"
+        - "&e▸ &7Source player: &f%record_source%"
+      states:
+        claim:
+          material: 'BOOK'
+          name: "&b&l%record_time%"
+          lore:
+            - "&b▶ &8Claim Record"
+            - "&e▸ %record_text%"
+            - "&e▸ &7Handled by: &f%record_source%"
     B:
       material: 'ARROW'
       custom_model_data: 0

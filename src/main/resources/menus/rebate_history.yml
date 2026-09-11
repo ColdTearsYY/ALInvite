@@ -22,6 +22,16 @@ rebate_history:
       lore:
         - "&7当前视图: &f%view_name%"
         - "&7左键切换记录类型"
+      states:
+        claim:
+          material: 'REPEATER'
+          name: "&b&l%toggle_target%"
+          lore:
+            - "&b▶ &8视图"
+            - "&b▸ &7当前视图: &b%view_name%"
+            - ""
+            - "&6▶ &8操作"
+            - "&7• &a鼠标左键 &a➤ &f切换显示内容"
       triggers:
         left:
           - 'toggle_rebate_view'
@@ -48,7 +58,15 @@ rebate_history:
       lore:
         - "&6▶ &8返利到账"
         - "&e▸ %record_text%"
-        - "&7来源玩家: &f%record_source%"
+        - "&e▸ &7来源玩家: &f%record_source%"
+      states:
+        claim:
+          material: 'BOOK'
+          name: "&b&l%record_time%"
+          lore:
+            - "&b▶ &8领取记录"
+            - "&e▸ %record_text%"
+            - "&e▸ &7经手人: &f%record_source%"
     H:
       material: 'OAK_DOOR'
       custom_model_data: 0
