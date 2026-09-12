@@ -63,7 +63,7 @@
 
 | 项目                  | 要求                           |
 | ------------------- | ---------------------------- |
-| **Minecraft 服务器版本** | 1.20.1+（目标：Lophine/Folia 26.2） |
+| **Minecraft 服务器版本** | 1.20.1+（目标：Lophine/Folia 26.2；上游已更新至 26.3） |
 | **Java 版本**         | **21+（Lophine 26.2 测试服使用 Java 25）** |
 | **服务器类型**           | 支持 Folia（推荐）或 Paper          |
 | **可选依赖**            | PlaceholderAPI、LuckPerms（可选） |

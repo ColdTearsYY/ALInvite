@@ -287,34 +287,33 @@ public class DatabaseManager {
      */
     private void createUniqueInviteeIndex() {
         String indexName = "idx_" + tablePrefix + "records_invitee_uniq";
-        String type = plugin.getConfigManager().getDatabaseConfig()
-            .getString("database.type", "sqlite");
-        boolean isMySQL = "mysql".equalsIgnoreCase(type);
-        try (Connection conn = getConnection()) {
-            if (isMySQL) {
-                String existsSql = "SELECT COUNT(*) FROM information_schema.statistics "
-                    + "WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?";
-                try (PreparedStatement exists = conn.prepareStatement(existsSql)) {
-                    exists.setString(1, tablePrefix + "records");
-                    exists.setString(2, indexName);
-                    try (ResultSet rs = exists.executeQuery()) {
-                        if (rs.next() && rs.getInt(1) > 0) {
-                            return;
-                        }
-                    }
-                }
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate("CREATE UNIQUE INDEX " + indexName + " ON "
-                        + tablePrefix + "records(invitee_uuid)");
-                }
-            } else {
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate("CREATE UNIQUE INDEX IF NOT EXISTS " + indexName
-                        + " ON " + tablePrefix + "records(invitee_uuid)");
-                }
+        String table = tablePrefix + "records";
+        boolean isMySQL = plugin.getConfigManager().getDatabaseConfig()
+                .getString("database.type", "sqlite").equalsIgnoreCase("mysql");
+        // MySQL 不支持 CREATE INDEX IF NOT EXISTS，改用 SHOW INDEX 探测
+        String sql = isMySQL
+                ? "CREATE UNIQUE INDEX " + indexName + " ON " + table + "(invitee_uuid)"
+                : "CREATE UNIQUE INDEX IF NOT EXISTS " + indexName + " ON " + table + "(invitee_uuid)";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            if (isMySQL && mysqlIndexExists(conn, table, indexName)) {
+                return;
             }
+            stmt.executeUpdate(sql);
         } catch (SQLException e) {
+            // 走到这里的剩余失败 = 历史数据存在重复值，唯一索引建不起来（索引已存在的情况已在上面消化）
             plugin.getLogger().warning("创建邀请记录唯一索引失败（跨服防重复计数受限，可能存在历史重复数据）: " + e.getMessage());
+        }
+    }
+
+    /** MySQL 没有 CREATE INDEX IF NOT EXISTS，用 SHOW INDEX 探测索引是否已存在。 */
+    private boolean mysqlIndexExists(Connection conn, String tableName, String indexName) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SHOW INDEX FROM " + tableName + " WHERE Key_name = ?")) {
+            ps.setString(1, indexName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 
@@ -343,14 +342,9 @@ public class DatabaseManager {
             String columnName = entry.getValue()[1];
 
             if (isMySQL) {
-                try (Connection conn = getConnection();
-                     PreparedStatement ps = conn.prepareStatement(
-                             "SHOW INDEX FROM " + tableName + " WHERE Key_name = ?")) {
-                    ps.setString(1, indexName);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (!rs.next()) {
-                            executeUpdate("CREATE INDEX " + indexName + " ON " + tableName + "(" + columnName + ")");
-                        }
+                try (Connection conn = getConnection()) {
+                    if (!mysqlIndexExists(conn, tableName, indexName)) {
+                        executeUpdate("CREATE INDEX " + indexName + " ON " + tableName + "(" + columnName + ")");
                     }
                 } catch (SQLException e) {
                     plugin.getLogger().warning("创建索引 " + indexName + " 时出错: " + e.getMessage());
