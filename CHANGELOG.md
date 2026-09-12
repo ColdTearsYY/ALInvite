@@ -1,5 +1,11 @@
 # ALInvite 更新公告
 
+## v2.1.1（2026-09-11）
+
+- 基于 fork 2.1.0 的 Lophine/Folia 26.2 传火邀请制发布。
+- 跟进上游 MySQL 唯一索引创建修复、database.yml 数据库类型横幅修复和 CHANGELOG。
+- 保留 fork 的 Folia 调度、传火名额、IP 限制、返利双视图与管理员审计等定制。
+
 > 本 fork 当前发布线为 v2.1.0，已在 Lophine/Folia 26.2 上验证；上游 v2.0.2 的 26.3 支持说明不代表本 fork 已验证 26.3。
 
 ## v2.0.2（2026-09-11）
