@@ -42,8 +42,13 @@ public class RewardService {
     }
 
     public void giveCommand(Player player, String command) {
-        String resolved = command.replace("%player%", player.getName());
-        plugin.getScheduler().runAtPlayer(player, () -> {
+        // 三种常见写法统一兼容：%player_name%（菜单DSL风格）、%player%、{player}（配置模板风格）
+        String resolved = command
+            .replace("%player_name%", player.getName())
+            .replace("%player%", player.getName())
+            .replace("{player}", player.getName());
+        // 命令必须在全局线程分发：区域化服务端（Folia / Paper 26+）拒绝从玩家区域线程执行命令
+        plugin.getScheduler().runGlobal(() -> {
             try {
                 boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), resolved);
                 if (!success) {

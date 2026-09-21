@@ -292,6 +292,7 @@ public class ALInvite extends JavaPlugin {
 
         int interval = configManager.getConfig().getInt("permission_group_rewards.check_interval", 10) * 20;
         permissionGroupCheckTaskId = scheduler.runGlobalTimer(() -> {
+            // 遍历只做收集，玩家相关检查逐个切实体线程（Folia 区域线程约束）
             for (Player player : Bukkit.getOnlinePlayers()) {
                 scheduler.runAtPlayer(player, () ->
                     permissionGroupRewardListener.checkOnlinePlayerPermissionGroup(player));

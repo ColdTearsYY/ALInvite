@@ -54,7 +54,9 @@ public class PermissionGroupRewardListener implements Listener {
                     String cmd = moneyCommand
                         .replace("%player%", player.getName())
                         .replace("%amount%", String.valueOf((int) amount));
-                    Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd);
+                    // 命令分发必须在全局线程（区域化服务端拒绝区域线程分发）
+                    plugin.getScheduler().runGlobal(() ->
+                        Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd));
                 }
             }
         }
@@ -179,14 +181,14 @@ public class PermissionGroupRewardListener implements Listener {
                         .replace("%player%", targetName)
                         .replace("%amount%", String.valueOf((int) money));
                     if (inviter != null) {
-                        plugin.getScheduler().runAtPlayer(inviter, () -> {
-                            Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd);
-                            String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
-                                .replace("{player}", newPlayerName)
-                                .replace("{group}", group)
-                                .replace("{money}", String.valueOf(money));
-                            inviter.sendMessage(msg);
-                        });
+                        // 命令走全局线程分发，消息仍在邀请者线程发送
+                        plugin.getScheduler().runGlobal(() ->
+                            Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd));
+                        String msg = plugin.getConfigManager().getMessage("permission_group_reward.money")
+                            .replace("{player}", newPlayerName)
+                            .replace("{group}", group)
+                            .replace("{money}", String.valueOf(money));
+                        plugin.getScheduler().runAtPlayer(inviter, () -> inviter.sendMessage(msg));
                     } else {
                         plugin.getScheduler().runGlobal(() ->
                             Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), cmd));
@@ -235,7 +237,8 @@ public class PermissionGroupRewardListener implements Listener {
                     .replace("%player%", player != null ? player.getName() : playerUuid.toString())
                     .replace("%amount%", String.valueOf(amount));
                 if (!moneyCommand.isEmpty()) {
-                    Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), moneyCommand);
+                    plugin.getScheduler().runGlobal(() ->
+                        Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), moneyCommand));
                 }
             }
             case "CUSTOM" -> {
@@ -244,7 +247,8 @@ public class PermissionGroupRewardListener implements Listener {
                     .replace("%player%", player != null ? player.getName() : playerUuid.toString())
                     .replace("%amount%", String.valueOf(amount));
                 if (!giveCmd.isEmpty()) {
-                    Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), giveCmd);
+                    plugin.getScheduler().runGlobal(() ->
+                        Bukkit.getServer().dispatchCommand(Bukkit.getConsoleSender(), giveCmd));
                 }
             }
             case "PLAYERPOINTS" -> {

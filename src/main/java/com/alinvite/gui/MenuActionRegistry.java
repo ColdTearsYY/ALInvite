@@ -96,11 +96,14 @@ public class MenuActionRegistry {
         register("sound", (player, value) -> playSound(player, value));
         register("message", (player, value) ->
             player.sendMessage(ConfigManager.colorize(value.replace("%player_name%", player.getName()))));
+        // 命令分发必须在全局线程（区域化服务端拒绝从玩家区域线程分发）
         register("console", (player, value) ->
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
-                value.replace("%player_name%", player.getName())));
+            plugin.getScheduler().runGlobal(() ->
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                    value.replace("%player_name%", player.getName()))));
         register("player", (player, value) ->
-            player.performCommand(value.replace("%player_name%", player.getName())));
+            plugin.getScheduler().runGlobal(() ->
+                player.performCommand(value.replace("%player_name%", player.getName()))));
     }
 
     private void changePage(Player player, int delta) {

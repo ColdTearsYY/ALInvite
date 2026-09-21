@@ -649,7 +649,8 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage("玩家不存在或不在线");
                     return;
                 }
-                plugin.getScheduler().runGlobal(() -> {
+                // 权限读取与奖励检查切实体线程（Folia 区域线程约束）
+                plugin.getScheduler().runAtPlayer(target, () -> {
                     plugin.getPermissionGroupRewardListener().manualCheck(target);
                     sender.sendMessage("已为玩家 " + target.getName() + " 检查权限组奖励");
                 });

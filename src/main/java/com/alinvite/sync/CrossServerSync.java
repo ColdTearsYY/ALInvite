@@ -84,6 +84,7 @@ public class CrossServerSync implements DatabaseManager.DataChangeListener {
                 }
                 String alias = parts[2];
                 String message = parts[3];
+                // 广播逐玩家切实体线程发送（Folia 区域线程约束），遍历仅做收集
                 plugin.getScheduler().runGlobal(() -> {
                     String line = ConfigManager.colorize("&8[&e" + alias + "&8]&r " + message);
                     for (Player player : Bukkit.getOnlinePlayers()) {

@@ -54,7 +54,7 @@ public class LuckPermsListener implements Listener {
         }
 
         Player player = event.getPlayer();
-        plugin.getScheduler().runGlobalDelayed(() ->
+        plugin.getScheduler().runAtPlayerDelayed(player, () ->
             rewardListener.checkOnlinePlayerPermissionGroup(player), 5L);
     }
 
@@ -76,7 +76,7 @@ public class LuckPermsListener implements Listener {
                     UUID uuid = (UUID) getUniqueId.invoke(user);
                     Player player = Bukkit.getPlayer(uuid);
                     if (player != null) {
-                        plugin.getScheduler().runGlobal(() ->
+                        plugin.getScheduler().runAtPlayer(player, () ->
                             rewardListener.checkOnlinePlayerPermissionGroup(player));
                     }
                 }
