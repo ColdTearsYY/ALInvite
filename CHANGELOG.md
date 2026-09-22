@@ -1,5 +1,11 @@
 # ALInvite 更新公告
 
+## v2.1.2（2026-09-22）
+
+- 合并上游 v2.0.3 的 Folia 线程模型修复：奖励/菜单/权限组命令统一走全局线程分发，权限组检查与 LuckPerms 事件逐玩家切实体线程，里程碑与跨服广播逐玩家渲染发送，奖励命令占位符兼容 `%player_name%` / `%player%` / `{player}`。
+- 修复 `docs/ourTravel-???????.md` 非法文件名导致 Windows 无法检出仓库的问题，重命名为 `docs/ourTravel-notes.md`。
+- 保留 fork 的 Folia 调度、传火名额、IP 限制、返利双视图与管理员审计等全部定制。
+
 ## v2.1.1（2026-09-11）
 
 - 基于 fork 2.1.0 的 Lophine/Folia 26.2 传火邀请制发布。
