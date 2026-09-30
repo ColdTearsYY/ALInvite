@@ -6,7 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.security.SecureRandom;
-import java.util.Set;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,7 +19,8 @@ public class InviteManager {
 
     private final ALInvite plugin;
     private final SecureRandom random = new SecureRandom();
-    private final Set<UUID> generatingCodes = ConcurrentHashMap.newKeySet();
+
+    private final Map<UUID, CompletableFuture<String>> generatingCodes = new ConcurrentHashMap<>();
 
     public InviteManager(ALInvite plugin) {
         this.plugin = plugin;
@@ -38,37 +39,31 @@ public class InviteManager {
     }
 
     public CompletableFuture<String> generateInviteCode(UUID uuid) {
-        if (!generatingCodes.add(uuid)) {
-            String cached = plugin.getCacheManager().getInviteCode(uuid);
-            return CompletableFuture.completedFuture(cached);
-        }
-
-        return uniqueCode(0)
-            .thenCompose(code -> plugin.getDatabaseManager().getPlayerData(uuid).thenCompose(data ->
-                data != null
-                    ? plugin.getDatabaseManager().updateInviteCode(uuid, code).thenApply(v -> code)
-                    : plugin.getDatabaseManager().createPlayerData(uuid, code).thenApply(v -> code)))
-            .thenApply(code -> {
-                plugin.getCacheManager().setInviteCode(uuid, code);
-                return code;
-            })
-            .whenComplete((code, throwable) -> generatingCodes.remove(uuid));
+        return generatingCodes.computeIfAbsent(uuid, key ->
+            generateAndPersistCode(key, 0)
+                .whenComplete((ignored, throwable) -> generatingCodes.remove(key)));
     }
 
-    private CompletableFuture<String> uniqueCode(int attempt) {
-        return AsyncPool.supply(() -> {
-            String code = randomCode();
-            return plugin.getDatabaseManager().getPlayerByInviteCodeSync(code) != null ? null : code;
-        }).thenCompose(code -> {
-            if (code != null) {
-                return CompletableFuture.completedFuture(code);
-            }
-            if (attempt >= 10) {
-                plugin.getLogger().warning("生成唯一邀请码已尝试超过 10 次，使用最后一次候选码");
-                return AsyncPool.supply(this::randomCode);
-            }
-            return uniqueCode(attempt + 1);
-        });
+    private CompletableFuture<String> generateAndPersistCode(UUID uuid, int attempt) {
+        if (attempt >= 64) {
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                "生成唯一邀请码失败：连续冲突次数超过限制"));
+        }
+
+        return AsyncPool.supply(this::randomCode)
+            .thenCompose(candidate -> plugin.getDatabaseManager()
+                .tryWriteInviteCode(uuid, candidate)
+                .thenCompose(result -> {
+                    return switch (result.status()) {
+                        case SUCCESS -> {
+                            plugin.getCacheManager().setInviteCode(uuid, result.code());
+                            yield CompletableFuture.completedFuture(result.code());
+                        }
+                        case CODE_CONFLICT -> generateAndPersistCode(uuid, attempt + 1);
+                        case ERROR -> CompletableFuture.failedFuture(new IllegalStateException(
+                            "邀请码写入数据库失败"));
+                    };
+                }));
     }
 
     private String randomCode() {
@@ -166,39 +161,49 @@ public class InviteManager {
             }
             boolean allowVeteranToBind = plugin.getConfigManager().getConfig()
                 .getBoolean("invite_code.allow_veteran_to_bind", false);
-            if (!allowVeteranToBind && snapshot.veteran()) {
-                return CompletableFuture.completedFuture(new BindResult(false, BindResultType.VETERAN_CANNOT_BIND));
-            }
-
-            return isCodeExists(trimmedCode).thenCompose(codeExists -> {
-                if (!codeExists) {
-                    return CompletableFuture.completedFuture(new BindResult(false, BindResultType.CODE_NOT_FOUND));
-                }
-                return plugin.getDatabaseManager().hasUsedInviteCode(snapshot.uuid()).thenCompose(hasUsed -> {
-                    if (hasUsed) {
-                        return CompletableFuture.completedFuture(new BindResult(false, BindResultType.ALREADY_USED));
+            return plugin.getDatabaseManager().hasRegistrationClaim(snapshot.uuid())
+                .thenCompose(openRegistered -> {
+                    if (!allowVeteranToBind && snapshot.veteran() && !openRegistered) {
+                        return CompletableFuture.completedFuture(
+                            new BindResult(false, BindResultType.VETERAN_CANNOT_BIND));
                     }
-                    return getInviterByCode(trimmedCode).thenCompose(inviterUuid -> {
-                        if (inviterUuid == null) {
-                            return CompletableFuture.completedFuture(new BindResult(false, BindResultType.CODE_NOT_FOUND));
+
+                    return isCodeExists(trimmedCode).thenCompose(codeExists -> {
+                        if (!codeExists) {
+                            return CompletableFuture.completedFuture(
+                                new BindResult(false, BindResultType.CODE_NOT_FOUND));
                         }
-                        if (inviterUuid.equals(snapshot.uuid())) {
-                            return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
-                        }
-                        return getPlayerIpAsync(inviterUuid).thenCompose(inviterIp -> {
-                            if (plugin.getConfigManager().getConfig()
-                                    .getBoolean("ip_restriction.enabled", true)
-                                    && plugin.getConfigManager().getConfig()
-                                        .getBoolean("ip_restriction.prevent_self_ip", true)
-                                    && inviterIp != null && inviterIp.equals(snapshot.ip())) {
-                                return CompletableFuture.completedFuture(new BindResult(false, BindResultType.SELF_INVITE));
-                            }
-                            return doBindInviteRecord(snapshot.uuid(), snapshot.ip(), snapshot.name(),
-                                inviterUuid, inviterIp, trimmedCode, player);
-                        });
+                        return plugin.getDatabaseManager().hasUsedInviteCode(snapshot.uuid())
+                            .thenCompose(hasUsed -> {
+                                if (hasUsed) {
+                                    return CompletableFuture.completedFuture(
+                                        new BindResult(false, BindResultType.ALREADY_USED));
+                                }
+                                return getInviterByCode(trimmedCode).thenCompose(inviterUuid -> {
+                                    if (inviterUuid == null) {
+                                        return CompletableFuture.completedFuture(
+                                            new BindResult(false, BindResultType.CODE_NOT_FOUND));
+                                    }
+                                    if (inviterUuid.equals(snapshot.uuid())) {
+                                        return CompletableFuture.completedFuture(
+                                            new BindResult(false, BindResultType.SELF_INVITE));
+                                    }
+                                    return getPlayerIpAsync(inviterUuid).thenCompose(inviterIp -> {
+                                        if (plugin.getConfigManager().getConfig()
+                                                .getBoolean("ip_restriction.enabled", true)
+                                                && plugin.getConfigManager().getConfig()
+                                                    .getBoolean("ip_restriction.prevent_self_ip", true)
+                                                && inviterIp != null && inviterIp.equals(snapshot.ip())) {
+                                            return CompletableFuture.completedFuture(
+                                                new BindResult(false, BindResultType.SELF_INVITE));
+                                        }
+                                        return doBindInviteRecord(snapshot.uuid(), snapshot.ip(), snapshot.name(),
+                                            inviterUuid, inviterIp, trimmedCode, player);
+                                    });
+                                });
+                            });
                     });
                 });
-            });
         }).exceptionally(ex -> {
             plugin.getLogger().severe("绑定邀请码时发生错误: " + ex.getMessage());
             return new BindResult(false, BindResultType.UNKNOWN);
@@ -271,35 +276,7 @@ public class InviteManager {
             .thenApply(dbResult -> {
                 switch (dbResult.status) {
                     case SUCCESS -> {
-                        plugin.getCacheManager().invalidateStats(inviterUuid);
-                        plugin.getCacheManager().invalidateInviteCode(playerUuid);
-                        plugin.getMilestoneManager().checkMilestones(inviterUuid, dbResult.totalInvites);
-
-                        plugin.getScheduler().runGlobal(() -> {
-                            com.alinvite.api.ALInviteAPI.fireInviteSuccess(inviterUuid, playerUuid);
-                            Bukkit.getPluginManager().callEvent(
-                                new com.alinvite.api.event.InviteBindEvent(player, inviterUuid, trimmedCode));
-                            registerWhitelist(playerName);
-                        });
-                        plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
-                        plugin.getScheduler().runAtPlayer(player, () -> {
-                            String path = dbResult.milestoneEnabled && dbResult.rebateEnabled && dbResult.giftEnabled
-                                ? "function_restrictions.bind_success_full"
-                                : "function_restrictions.bind_success_limited";
-                            player.sendMessage(plugin.getConfigManager().getMessage(path, player));
-                            if (!dbResult.milestoneEnabled) {
-                                player.sendMessage(plugin.getConfigManager().getMessage(
-                                    "function_restrictions.bind_success_milestone_disabled", player));
-                            }
-                            if (!dbResult.rebateEnabled) {
-                                player.sendMessage(plugin.getConfigManager().getMessage(
-                                    "function_restrictions.bind_success_rebate_disabled", player));
-                            }
-                            if (!dbResult.giftEnabled) {
-                                player.sendMessage(plugin.getConfigManager().getMessage(
-                                    "function_restrictions.bind_success_gift_disabled", player));
-                            }
-                        });
+                        completeSuccessfulInvite(player, inviterUuid, trimmedCode, dbResult);
                         return new BindResult(true, BindResultType.SUCCESS,
                             dbResult.remainingSlots, dbResult.nextSlotAt);
                     }
@@ -327,6 +304,81 @@ public class InviteManager {
                     }
                 }
             });
+    }
+
+    private record PendingClaimSnapshot(UUID uuid, String name, String ip) {}
+
+    public CompletableFuture<BindResult> claimPendingInvite(Player player) {
+        return plugin.getScheduler().supplyAtPlayer(player, () -> {
+            if (player.getAddress() == null || player.getAddress().getAddress() == null) {
+                return null;
+            }
+            return new PendingClaimSnapshot(player.getUniqueId(), player.getName(),
+                player.getAddress().getAddress().getHostAddress());
+        }).thenCompose(snapshot -> {
+            if (snapshot == null) {
+                return CompletableFuture.completedFuture(new BindResult(false, BindResultType.UNKNOWN));
+            }
+            String normalizedName = snapshot.name().toLowerCase(java.util.Locale.ROOT);
+            return plugin.getDatabaseManager().getPendingInvite(normalizedName).thenCompose(pending -> {
+                if (pending == null) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                return plugin.getDatabaseManager().claimPendingInvite(
+                    pending, snapshot.uuid(), snapshot.ip(), snapshot.name(), normalizedName)
+                    .thenApply(dbResult -> {
+                        if (dbResult.status == com.alinvite.database.DatabaseManager.InviteRecordStatus.SUCCESS) {
+                            completeSuccessfulInvite(player, pending.inviterUuid(), pending.inviterCode(), dbResult);
+                            return new BindResult(true, BindResultType.SUCCESS,
+                                dbResult.remainingSlots, dbResult.nextSlotAt);
+                        }
+                        // 认领失败（已被绑定/IP限制/已是老玩家）：释放预邀请，归还名额。
+                        plugin.getDatabaseManager().releasePendingInvite(normalizedName, pending.inviterUuid());
+                        return switch (dbResult.status) {
+                            case DUPLICATE -> new BindResult(false, BindResultType.ALREADY_USED);
+                            case IP_LIMIT -> new BindResult(false, BindResultType.IP_LIMIT);
+                            case INVITEE_VETERAN -> new BindResult(false, BindResultType.VETERAN_CANNOT_BIND);
+                            default -> new BindResult(false, BindResultType.UNKNOWN);
+                        };
+                    });
+            });
+        });
+    }
+
+    private void completeSuccessfulInvite(Player player, UUID inviterUuid, String inviteCode,
+                                          com.alinvite.database.DatabaseManager.InviteRecordResult dbResult) {
+        plugin.getCacheManager().invalidateStats(inviterUuid);
+        plugin.getCacheManager().invalidateInviteCode(player.getUniqueId());
+        plugin.getMilestoneManager().checkMilestones(inviterUuid, dbResult.totalInvites);
+        if (plugin.getBindingGateManager() != null) {
+            plugin.getBindingGateManager().unlock(player.getUniqueId());
+        }
+
+        plugin.getScheduler().runGlobal(() -> {
+            com.alinvite.api.ALInviteAPI.fireInviteSuccess(inviterUuid, player.getUniqueId());
+            Bukkit.getPluginManager().callEvent(
+                new com.alinvite.api.event.InviteBindEvent(player, inviterUuid, inviteCode));
+            registerWhitelist(player.getName());
+        });
+        plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
+        plugin.getScheduler().runAtPlayer(player, () -> {
+            String path = dbResult.milestoneEnabled && dbResult.rebateEnabled && dbResult.giftEnabled
+                ? "function_restrictions.bind_success_full"
+                : "function_restrictions.bind_success_limited";
+            player.sendMessage(plugin.getConfigManager().getMessage(path, player));
+            if (!dbResult.milestoneEnabled) {
+                player.sendMessage(plugin.getConfigManager().getMessage(
+                    "function_restrictions.bind_success_milestone_disabled", player));
+            }
+            if (!dbResult.rebateEnabled) {
+                player.sendMessage(plugin.getConfigManager().getMessage(
+                    "function_restrictions.bind_success_rebate_disabled", player));
+            }
+            if (!dbResult.giftEnabled) {
+                player.sendMessage(plugin.getConfigManager().getMessage(
+                    "function_restrictions.bind_success_gift_disabled", player));
+            }
+        });
     }
 
     private void registerWhitelist(String playerName) {

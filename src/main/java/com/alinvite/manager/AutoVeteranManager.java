@@ -138,31 +138,25 @@ public class AutoVeteranManager {
 
         UUID uuid = player.getUniqueId();
 
-        // 如果已经授予过，跳过
-        if (alreadyGranted.contains(uuid)) {
-            return;
-        }
 
-        // 检查玩家是否已有老玩家权限
         String veteranPerm = plugin.getConfigManager().getConfig()
                 .getString("invite_code.veteran_permission", "alinvite.veteran");
-        if (player.hasPermission(veteranPerm)) {
-            // 已有权限，记录为已授予，避免重复检查
-            alreadyGranted.add(uuid);
-            return;
-        }
+        boolean veteran = player.hasPermission(veteranPerm);
 
-        // 通过 PAPI 获取在线时间
         double hours = getPlaytimeHours(player);
         if (hours < 0) {
-            // PAPI 解析失败或占位符不存在，跳过
             return;
         }
 
-        if (hours >= requiredHours) {
-            // 达到要求，授予权限
-            grantVeteranPermission(player, hours);
+        if (!veteran) {
+            if (hours >= requiredHours && alreadyGranted.add(uuid)) {
+                grantVeteranPermission(player, hours);
+            }
+            return;
         }
+
+        alreadyGranted.add(uuid);
+        grantEligibleInviteSlots(player, hours);
     }
 
     /**
@@ -250,8 +244,6 @@ public class AutoVeteranManager {
      * 授予玩家老玩家权限
      */
     private void grantVeteranPermission(Player player, double hours) {
-        // 立即标记为已授予，防止竞态条件导致重复执行
-        alreadyGranted.add(player.getUniqueId());
 
         String command = grantCommand.replace("{player}", player.getName());
         final String finalCommand = command;
@@ -273,8 +265,9 @@ public class AutoVeteranManager {
                         player.sendMessage(ConfigManager.colorize(notifyMsg, player)));
                 }
 
-                // 自动为玩家生成邀请码
-                plugin.getInviteManager().generateInviteCode(player.getUniqueId());
+                // 先生成永久邀请码，再按累计游玩时长发放邀请名额。
+                plugin.getInviteManager().generateInviteCode(player.getUniqueId())
+                    .thenRun(() -> grantEligibleInviteSlots(player, hours));
             } else {
                 // 命令执行失败，回滚标记，允许下次重试
                 alreadyGranted.remove(player.getUniqueId());
@@ -282,6 +275,31 @@ public class AutoVeteranManager {
             }
         });
     }
+    private void grantEligibleInviteSlots(Player player, double hours) {
+        if (!plugin.getConfigManager().getConfig().getBoolean("invite_quota.enabled", true)) {
+            return;
+        }
+        InviteQuotaPolicy.Mode mode = InviteQuotaPolicy.Mode.fromConfig(
+            plugin.getConfigManager().getConfig().getString("invite_quota.grant_mode", "ONCE"));
+        double hoursPerSlot = Math.max(0.01, plugin.getConfigManager().getConfig()
+            .getDouble("invite_quota.hours_per_slot", 24.0));
+        int eligiblePeriods = InviteQuotaPolicy.eligiblePeriods(mode, hours, hoursPerSlot);
+        if (eligiblePeriods <= 0) {
+            return;
+        }
+        plugin.getDatabaseManager().grantPlaytimeSlots(player.getUniqueId(), eligiblePeriods)
+            .thenAccept(added -> {
+                if (added <= 0) {
+                    return;
+                }
+                plugin.getScheduler().runAtPlayer(player, () -> {
+                    String message = plugin.getConfigManager().getMessage("invite_quota.granted", player)
+                        .replace("{amount}", String.valueOf(added));
+                    player.sendMessage(message);
+                });
+            });
+    }
+
 
     /**
      * 玩家加入时检查

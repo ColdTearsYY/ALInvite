@@ -157,7 +157,7 @@ public class DatabaseManager {
                 `bound_invite_code` VARCHAR(16),
                 `personal_code_ready` INT NOT NULL DEFAULT 1,
                 `total_invites` INT NOT NULL DEFAULT 0,
-                `invite_slots` INT NOT NULL DEFAULT 1,
+                `invite_slots` INT NOT NULL DEFAULT 0,
                 `last_slot_replenish` BIGINT NOT NULL DEFAULT 0,
                 `claimed_milestones` TEXT,
                 `announced_milestones` TEXT,
@@ -176,7 +176,8 @@ public class DatabaseManager {
                 `last_invite_time` BIGINT,
                 `last_code_change` BIGINT,
                 `last_permission_group` VARCHAR(32),
-                `created_at` BIGINT NOT NULL
+                `created_at` BIGINT NOT NULL,
+                `quota_periods_granted` INT NOT NULL DEFAULT 0
             )
             """;
 
@@ -230,11 +231,47 @@ public class DatabaseManager {
             )
             """.replace("{autoIncrement}", autoIncrementSyntax);
 
+        String pendingInvitesTable = """
+            CREATE TABLE IF NOT EXISTS `{prefix}pending_invites` (
+                `target_name` VARCHAR(16) PRIMARY KEY,
+                `target_display_name` VARCHAR(16) NOT NULL,
+                `inviter_uuid` VARCHAR(36) NOT NULL,
+                `inviter_ip` VARCHAR(45),
+                `created_at` BIGINT NOT NULL
+            )
+            """;
+
+        String boundPlayerNamesTable = """
+            CREATE TABLE IF NOT EXISTS `{prefix}bound_player_names` (
+                `name_lower` VARCHAR(16) PRIMARY KEY,
+                `player_uuid` VARCHAR(36) NOT NULL,
+                `display_name` VARCHAR(16) NOT NULL,
+                `inviter_uuid` VARCHAR(36) NOT NULL,
+                `bound_at` BIGINT NOT NULL,
+                `updated_at` BIGINT NOT NULL
+            )
+            """;
+
+
+        String hiddenRegistrationCodesTable = """
+            CREATE TABLE IF NOT EXISTS `{prefix}hidden_registration_codes` (
+                `code` VARCHAR(32) PRIMARY KEY,
+                `batch_id` VARCHAR(36) NOT NULL,
+                `claimed_uuid` VARCHAR(36) UNIQUE,
+                `claimed_name` VARCHAR(16),
+                `created_at` BIGINT NOT NULL,
+                `claimed_at` BIGINT
+            )
+            """;
+
         executeUpdate(playersTable.replace("{prefix}", tablePrefix));
         executeUpdate(recordsTable.replace("{prefix}", tablePrefix));
         executeUpdate(announcementsTable.replace("{prefix}", tablePrefix));
         executeUpdate(pendingMilestonesTable.replace("{prefix}", tablePrefix));
         executeUpdate(pointsRebateTable.replace("{prefix}", tablePrefix));
+        executeUpdate(pendingInvitesTable.replace("{prefix}", tablePrefix));
+        executeUpdate(boundPlayerNamesTable.replace("{prefix}", tablePrefix));
+        executeUpdate(hiddenRegistrationCodesTable.replace("{prefix}", tablePrefix));
 
         String rebateRecordsTable = """
             CREATE TABLE IF NOT EXISTS `{prefix}rebate_records` (
@@ -258,6 +295,7 @@ public class DatabaseManager {
         executeUpdate(rebateRecordsTable.replace("{prefix}", tablePrefix));
         executeUpdate(ipClaimsTable.replace("{prefix}", tablePrefix));
         backfillIpClaims();
+        backfillBoundPlayerNames();
 
         createUniqueInviteeIndex();
 
@@ -279,6 +317,70 @@ public class DatabaseManager {
                 + "SELECT invitee_ip, COUNT(*), MAX(invited_at) FROM " + tablePrefix + "records "
                 + "WHERE invitee_ip IS NOT NULL AND invitee_ip <> '' GROUP BY invitee_ip";
         executeUpdate(sql);
+    }
+
+    /** 历史绑定记录回填到名字目录；幂等 upsert，不影响已有绑定。 */
+    private void backfillBoundPlayerNames() {
+        String type = plugin.getConfigManager().getDatabaseConfig().getString("database.type", "sqlite");
+        boolean isMySQL = "mysql".equalsIgnoreCase(type);
+        String sql = isMySQL
+            ? "INSERT INTO " + tablePrefix + "bound_player_names "
+                + "(name_lower, player_uuid, display_name, inviter_uuid, bound_at, updated_at) "
+                + "SELECT LOWER(r.invitee_name), r.invitee_uuid, r.invitee_name, r.inviter_uuid, r.invited_at, r.invited_at "
+                + "FROM " + tablePrefix + "records r "
+                + "ON DUPLICATE KEY UPDATE player_uuid = VALUES(player_uuid), display_name = VALUES(display_name), "
+                + "inviter_uuid = VALUES(inviter_uuid), bound_at = VALUES(bound_at), updated_at = VALUES(updated_at)"
+            : "INSERT OR REPLACE INTO " + tablePrefix + "bound_player_names "
+                + "(name_lower, player_uuid, display_name, inviter_uuid, bound_at, updated_at) "
+                + "SELECT LOWER(r.invitee_name), r.invitee_uuid, r.invitee_name, r.inviter_uuid, r.invited_at, r.invited_at "
+                + "FROM " + tablePrefix + "records r";
+        try {
+            executeUpdate(sql);
+        } catch (Exception e) {
+            plugin.getLogger().warning("回填绑定玩家名字目录失败: " + e.getMessage());
+        }
+    }
+
+    private void upsertBoundPlayerName(Connection conn, String name, UUID playerUuid,
+                                       UUID inviterUuid, long now, boolean isMySQL) throws SQLException {
+        String sql = isMySQL
+            ? "INSERT INTO " + tablePrefix + "bound_player_names "
+                + "(name_lower, player_uuid, display_name, inviter_uuid, bound_at, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE player_uuid = VALUES(player_uuid), "
+                + "display_name = VALUES(display_name), inviter_uuid = VALUES(inviter_uuid), "
+                + "bound_at = VALUES(bound_at), updated_at = VALUES(updated_at)"
+            : "INSERT OR REPLACE INTO " + tablePrefix + "bound_player_names "
+                + "(name_lower, player_uuid, display_name, inviter_uuid, bound_at, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, name.toLowerCase(java.util.Locale.ROOT));
+            stmt.setString(2, playerUuid.toString());
+            stmt.setString(3, name);
+            stmt.setString(4, inviterUuid.toString());
+            stmt.setLong(5, now);
+            stmt.setLong(6, now);
+            stmt.executeUpdate();
+        }
+    }
+
+    public CompletableFuture<UUID> findBoundPlayerByName(String normalizedName) {
+        return AsyncPool.supply(() -> findBoundPlayerByNameSync(normalizedName));
+    }
+
+    public UUID findBoundPlayerByNameSync(String normalizedName) {
+        String sql = "SELECT player_uuid FROM " + tablePrefix
+            + "bound_player_names WHERE name_lower = ?";
+        try (Connection conn = getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, normalizedName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return UUID.fromString(rs.getString("player_uuid"));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("查询绑定玩家名字目录失败: " + e.getMessage());
+        }
+        return null;
     }
 
     /**
@@ -398,6 +500,14 @@ public class DatabaseManager {
             addColumnIfMissing("players", "gift_purchase_time", isMySQL,
                     "ALTER TABLE " + tablePrefix + "players ADD COLUMN gift_purchase_time BIGINT",
                     "ALTER TABLE " + tablePrefix + "players ADD COLUMN gift_purchase_time BIGINT");
+            boolean quotaPeriodsMissing = !checkColumnExists("players", "quota_periods_granted", isMySQL);
+            addColumnIfMissing("players", "quota_periods_granted", isMySQL,
+                    "ALTER TABLE " + tablePrefix + "players ADD COLUMN quota_periods_granted INT NOT NULL DEFAULT 0",
+                    "ALTER TABLE " + tablePrefix + "players ADD COLUMN quota_periods_granted INT NOT NULL DEFAULT 0");
+            if (quotaPeriodsMissing) {
+                executeUpdate("UPDATE " + tablePrefix + "players SET quota_periods_granted = 1 "
+                    + "WHERE personal_code_ready = 1");
+            }
             addColumnIfMissing("players", "total_rebate_amount", isMySQL,
                     "ALTER TABLE " + tablePrefix + "players ADD COLUMN total_rebate_amount REAL NOT NULL DEFAULT 0",
                     "ALTER TABLE " + tablePrefix + "players ADD COLUMN total_rebate_amount DECIMAL(10,2) NOT NULL DEFAULT 0");
@@ -512,22 +622,125 @@ public class DatabaseManager {
 
     public void createPlayerDataSync(UUID uuid, String inviteCode) {
         long now = System.currentTimeMillis();
-        int initialSlots = Math.max(0, plugin.getConfigManager().getConfig()
-            .getInt("invite_quota.initial_slots", 1));
         String sql = "INSERT INTO " + tablePrefix
-            + "players (uuid, invite_code, personal_code_ready, total_invites, invite_slots, last_slot_replenish, created_at)"
-            + " VALUES (?, ?, 1, 0, ?, ?, ?)";
+            + "players (uuid, invite_code, personal_code_ready, total_invites, invite_slots,"
+            + " last_slot_replenish, quota_periods_granted, created_at)"
+            + " VALUES (?, ?, 1, 0, 0, ?, 0, ?)";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, uuid.toString());
             stmt.setString(2, inviteCode);
-            stmt.setInt(3, initialSlots);
+            stmt.setLong(3, now);
             stmt.setLong(4, now);
-            stmt.setLong(5, now);
             stmt.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().severe("创建玩家数据失败: " + e.getMessage());
         }
+    }
+
+    public enum InviteCodeWriteStatus {
+        SUCCESS,
+        CODE_CONFLICT,
+        ERROR
+    }
+
+    public record InviteCodeWriteResult(InviteCodeWriteStatus status, String code) {
+        public boolean success() {
+            return status == InviteCodeWriteStatus.SUCCESS;
+        }
+    }
+
+    /**
+     * Atomically writes an invite code. The database UNIQUE constraint is the final
+     * authority; a duplicate code is returned as CODE_CONFLICT instead of being
+     * swallowed and reported as success.
+     */
+    public CompletableFuture<InviteCodeWriteResult> tryWriteInviteCode(UUID uuid, String inviteCode) {
+        return AsyncPool.supply(() -> tryWriteInviteCodeSync(uuid, inviteCode));
+    }
+
+    public InviteCodeWriteResult tryWriteInviteCodeSync(UUID uuid, String inviteCode) {
+        boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
+            .getDatabaseConfig().getString("database.type", "sqlite"));
+        long now = System.currentTimeMillis();
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                if (!isMySQL) {
+                    try (Statement busy = conn.createStatement()) {
+                        busy.execute("PRAGMA busy_timeout=5000");
+                    }
+                }
+                String select = "SELECT uuid FROM " + tablePrefix + "players WHERE uuid = ?"
+                    + (isMySQL ? " FOR UPDATE" : "");
+                boolean exists;
+                try (PreparedStatement stmt = conn.prepareStatement(select)) {
+                    stmt.setString(1, uuid.toString());
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        exists = rs.next();
+                    }
+                }
+
+                int changed;
+                if (exists) {
+                    String update = "UPDATE " + tablePrefix
+                        + "players SET invite_code = ?, personal_code_ready = 1, last_code_change = ?"
+                        + " WHERE uuid = ?";
+                    try (PreparedStatement stmt = conn.prepareStatement(update)) {
+                        stmt.setString(1, inviteCode);
+                        stmt.setLong(2, now);
+                        stmt.setString(3, uuid.toString());
+                        changed = stmt.executeUpdate();
+                    }
+                } else {
+                    String insert = "INSERT INTO " + tablePrefix
+                        + "players (uuid, invite_code, personal_code_ready, total_invites, invite_slots,"
+                        + " last_slot_replenish, quota_periods_granted, created_at)"
+                        + " VALUES (?, ?, 1, 0, 0, ?, 0, ?)";
+                    try (PreparedStatement stmt = conn.prepareStatement(insert)) {
+                        stmt.setString(1, uuid.toString());
+                        stmt.setString(2, inviteCode);
+                        stmt.setLong(3, now);
+                        stmt.setLong(4, now);
+                        changed = stmt.executeUpdate();
+                    }
+                }
+                if (changed != 1) {
+                    conn.rollback();
+                    return new InviteCodeWriteResult(InviteCodeWriteStatus.ERROR, null);
+                }
+                conn.commit();
+                notifyChange(uuid, "invitecode");
+                return new InviteCodeWriteResult(InviteCodeWriteStatus.SUCCESS, inviteCode);
+            } catch (SQLException e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                if (isUniqueConstraintViolation(e)) {
+                    return new InviteCodeWriteResult(InviteCodeWriteStatus.CODE_CONFLICT, null);
+                }
+                plugin.getLogger().severe("原子写入邀请码失败: " + e.getMessage());
+                return new InviteCodeWriteResult(InviteCodeWriteStatus.ERROR, null);
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("打开邀请码写入事务失败: " + e.getMessage());
+            return new InviteCodeWriteResult(InviteCodeWriteStatus.ERROR, null);
+        }
+    }
+
+    private boolean isUniqueConstraintViolation(SQLException e) {
+        String state = e.getSQLState();
+        String message = e.getMessage() == null ? "" : e.getMessage().toLowerCase(java.util.Locale.ROOT);
+        return (state != null && state.startsWith("23"))
+            || message.contains("unique")
+            || message.contains("duplicate")
+            || message.contains("constraint failed");
     }
 
     public CompletableFuture<String> getInviteCodeByPlayer(UUID uuid) {
@@ -720,11 +933,7 @@ public class DatabaseManager {
         }
     }
 
-    /**
-     * 在单个数据库事务内完成邀请记录、邀请人数与配额扣减。
-     * MySQL 使用行锁；SQLite 使用连接事务与忙等待，避免跨服/并发调用层先查后写造成超发。
-     */
-    /** 兼容旧调用：未知邀请人 IP 时不执行同 IP 自邀比较。 */
+    /** Compatibility overload: inviter IP is unknown, so self-IP comparison is skipped. */
     public CompletableFuture<InviteRecordResult> recordInviteWithQuota(
             UUID inviterUuid, UUID inviteeUuid, String inviteeIp, String inviteeName,
             String boundInviteCode) {
@@ -749,19 +958,19 @@ public class DatabaseManager {
     public InviteRecordResult recordInviteWithQuotaSync(
             UUID inviterUuid, UUID inviteeUuid, String inviteeIp, String inviterIp,
             String inviteeName, String boundInviteCode) {
+        return recordInviteTransaction(inviterUuid, inviteeUuid, inviteeIp, inviterIp,
+            inviteeName, boundInviteCode, true, null);
+    }
+
+    private InviteRecordResult recordInviteTransaction(
+            UUID inviterUuid, UUID inviteeUuid, String inviteeIp, String inviterIp,
+            String inviteeName, String boundInviteCode, boolean consumeQuota,
+            String pendingTargetName) {
         boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
             .getDatabaseConfig().getString("database.type", "sqlite"));
         boolean quotaEnabled = plugin.getConfigManager().getConfig()
             .getBoolean("invite_quota.enabled", true);
-        int initialSlots = Math.max(0, plugin.getConfigManager().getConfig()
-            .getInt("invite_quota.initial_slots", 1));
-        int maxSlots = Math.max(initialSlots, plugin.getConfigManager().getConfig()
-            .getInt("invite_quota.max_slots", initialSlots));
-        long intervalHours = Math.max(1L, plugin.getConfigManager().getConfig()
-            .getLong("invite_quota.replenish_interval_hours", 24L));
-        long intervalMillis = intervalHours * 60L * 60L * 1000L;
-        int maxInvites = plugin.getConfigManager().getConfig()
-            .getInt("invite_code.max_invites", 0);
+        int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
         boolean ipRestrictionEnabled = plugin.getConfigManager().getConfig()
             .getBoolean("ip_restriction.enabled", true);
         int maxInvitesPerIp = plugin.getConfigManager().getConfig()
@@ -779,42 +988,56 @@ public class DatabaseManager {
                     }
                 }
 
-                String inviterSql = "SELECT total_invites, invite_slots, last_slot_replenish "
-                    + "FROM " + tablePrefix + "players WHERE uuid = ?"
-                    + (isMySQL ? " FOR UPDATE" : "");
+                if (pendingTargetName != null) {
+                    String pendingSql = "SELECT inviter_uuid FROM " + tablePrefix
+                        + "pending_invites WHERE target_name = ?"
+                        + (isMySQL ? " FOR UPDATE" : "");
+                    try (PreparedStatement stmt = conn.prepareStatement(pendingSql)) {
+                        stmt.setString(1, pendingTargetName);
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            if (!rs.next() || !inviterUuid.toString().equals(rs.getString("inviter_uuid"))) {
+                                conn.rollback();
+                                return new InviteRecordResult(InviteRecordStatus.DUPLICATE, 0, 0, 0L);
+                            }
+                        }
+                    }
+                }
+
+                String inviterSql = "SELECT total_invites, invite_slots FROM " + tablePrefix
+                    + "players WHERE uuid = ?" + (isMySQL ? " FOR UPDATE" : "");
                 int totalInvites;
                 int slots;
-                long lastReplenish;
                 try (PreparedStatement stmt = conn.prepareStatement(inviterSql)) {
                     stmt.setString(1, inviterUuid.toString());
                     try (ResultSet rs = stmt.executeQuery()) {
                         if (!rs.next()) {
                             conn.rollback();
-                            return new InviteRecordResult(InviteRecordStatus.INVITER_LIMIT_REACHED,
-                                0, 0, 0L);
+                            return new InviteRecordResult(InviteRecordStatus.INVITER_LIMIT_REACHED, 0, 0, 0L);
                         }
                         totalInvites = rs.getInt("total_invites");
                         slots = Math.max(0, rs.getInt("invite_slots"));
-                        lastReplenish = rs.getLong("last_slot_replenish");
                     }
                 }
 
-                if (maxInvites > 0 && totalInvites >= maxInvites) {
+                if (consumeQuota && maxInvites > 0 && totalInvites >= maxInvites) {
                     conn.rollback();
                     return new InviteRecordResult(InviteRecordStatus.INVITER_LIMIT_REACHED,
                         totalInvites, slots, 0L);
                 }
-
+                if (consumeQuota && quotaEnabled && slots <= 0) {
+                    conn.rollback();
+                    return new InviteRecordResult(InviteRecordStatus.QUOTA_EXHAUSTED,
+                        totalInvites, 0, 0L);
+                }
                 if (ipRestrictionEnabled && preventSelfIp && inviterIp != null
                         && inviterIp.equals(inviteeIp)) {
                     conn.rollback();
                     return new InviteRecordResult(InviteRecordStatus.IP_LIMIT,
-                        totalInvites, slots, lastReplenish + intervalMillis);
+                        totalInvites, slots, 0L);
                 }
 
                 int ipCount = 0;
                 if (inviteeIp != null && !inviteeIp.isBlank()) {
-                    // 先在 IP 主键行上原子递增；若超过上限，整个事务回滚，跨服并发不会超发。
                     String claimSql = isMySQL
                         ? "INSERT INTO " + tablePrefix + "ip_claims (ip, bind_count, last_bound_at) VALUES (?, 1, ?) "
                             + "ON DUPLICATE KEY UPDATE bind_count = bind_count + 1, last_bound_at = VALUES(last_bound_at)"
@@ -839,33 +1062,10 @@ public class DatabaseManager {
                 if (ipRestrictionEnabled && maxInvitesPerIp > 0 && ipCount > maxInvitesPerIp) {
                     conn.rollback();
                     return new InviteRecordResult(InviteRecordStatus.IP_LIMIT,
-                        totalInvites, slots, lastReplenish + intervalMillis);
+                        totalInvites, slots, 0L);
                 }
 
-                if (quotaEnabled) {
-                    if (lastReplenish <= 0L) {
-                        lastReplenish = now;
-                    }
-                    if (slots >= maxSlots) {
-                        slots = maxSlots;
-                        lastReplenish = now;
-                    } else if (now > lastReplenish) {
-                        long replenished = (now - lastReplenish) / intervalMillis;
-                        if (replenished > 0L) {
-                            slots = (int) Math.min((long) maxSlots, slots + replenished);
-                            lastReplenish += replenished * intervalMillis;
-                            if (slots >= maxSlots) {
-                                lastReplenish = now;
-                            }
-                        }
-                    }
-                    if (slots <= 0) {
-                        conn.rollback();
-                        return new InviteRecordResult(InviteRecordStatus.QUOTA_EXHAUSTED,
-                            totalInvites, 0, lastReplenish + intervalMillis);
-                    }
-                }
-
+                boolean openRegistered = hasRegistrationClaimOnConnection(conn, inviteeUuid, isMySQL);
                 String inviteeSql = "SELECT personal_code_ready FROM " + tablePrefix
                     + "players WHERE uuid = ?" + (isMySQL ? " FOR UPDATE" : "");
                 boolean inviteeExists;
@@ -873,7 +1073,7 @@ public class DatabaseManager {
                     stmt.setString(1, inviteeUuid.toString());
                     try (ResultSet rs = stmt.executeQuery()) {
                         inviteeExists = rs.next();
-                        if (inviteeExists && rs.getBoolean("personal_code_ready")) {
+                        if (inviteeExists && rs.getBoolean("personal_code_ready") && !openRegistered) {
                             conn.rollback();
                             return new InviteRecordResult(InviteRecordStatus.INVITEE_VETERAN,
                                 totalInvites, slots, 0L);
@@ -884,19 +1084,17 @@ public class DatabaseManager {
                 String insertSql = (isMySQL ? "INSERT IGNORE INTO " : "INSERT OR IGNORE INTO ")
                     + tablePrefix + "records (inviter_uuid, invitee_uuid, invitee_ip, invitee_name, invited_at)"
                     + " VALUES (?, ?, ?, ?, ?)";
-                int inserted;
                 try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
                     stmt.setString(1, inviterUuid.toString());
                     stmt.setString(2, inviteeUuid.toString());
                     stmt.setString(3, inviteeIp);
                     stmt.setString(4, inviteeName);
                     stmt.setLong(5, now);
-                    inserted = stmt.executeUpdate();
-                }
-                if (inserted != 1) {
-                    conn.rollback();
-                    return new InviteRecordResult(InviteRecordStatus.DUPLICATE,
-                        totalInvites, slots, 0L);
+                    if (stmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return new InviteRecordResult(InviteRecordStatus.DUPLICATE,
+                            totalInvites, slots, 0L);
+                    }
                 }
 
                 boolean sameIp = inviterIp != null && inviterIp.equals(inviteeIp);
@@ -909,9 +1107,13 @@ public class DatabaseManager {
                     .getBoolean("ip_restriction.flexible_mode.gift", false);
 
                 if (inviteeExists) {
-                    String updateInvitee = "UPDATE " + tablePrefix
-                        + "players SET bound_invite_code = ?, personal_code_ready = 0, bind_ip = ?,"
-                        + " milestone_enabled = ?, rebate_enabled = ?, gift_enabled = ? WHERE uuid = ?";
+                    String updateInvitee = openRegistered
+                        ? "UPDATE " + tablePrefix
+                            + "players SET bound_invite_code = ?, bind_ip = ?, milestone_enabled = ?, "
+                            + "rebate_enabled = ?, gift_enabled = ? WHERE uuid = ?"
+                        : "UPDATE " + tablePrefix
+                            + "players SET bound_invite_code = ?, personal_code_ready = 0, bind_ip = ?, "
+                            + "milestone_enabled = ?, rebate_enabled = ?, gift_enabled = ? WHERE uuid = ?";
                     try (PreparedStatement stmt = conn.prepareStatement(updateInvitee)) {
                         stmt.setString(1, boundInviteCode);
                         stmt.setString(2, inviteeIp);
@@ -925,34 +1127,32 @@ public class DatabaseManager {
                     String placeholder = "B" + UUID.randomUUID().toString().replace("-", "").substring(0, 15);
                     String createInvitee = "INSERT INTO " + tablePrefix
                         + "players (uuid, invite_code, bound_invite_code, personal_code_ready, total_invites,"
-                        + " invite_slots, last_slot_replenish, bind_ip, milestone_enabled, rebate_enabled, gift_enabled, created_at)"
-                        + " VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)";
+                        + " invite_slots, last_slot_replenish, quota_periods_granted, bind_ip, milestone_enabled,"
+                        + " rebate_enabled, gift_enabled, created_at)"
+                        + " VALUES (?, ?, ?, 0, 0, 0, ?, 0, ?, ?, ?, ?, ?)";
                     try (PreparedStatement stmt = conn.prepareStatement(createInvitee)) {
                         stmt.setString(1, inviteeUuid.toString());
                         stmt.setString(2, placeholder);
                         stmt.setString(3, boundInviteCode);
-                        stmt.setInt(4, initialSlots);
-                        stmt.setLong(5, now);
-                        stmt.setString(6, inviteeIp);
-                        stmt.setBoolean(7, milestoneEnabled);
-                        stmt.setBoolean(8, rebateEnabled);
-                        stmt.setBoolean(9, giftEnabled);
-                        stmt.setLong(10, now);
+                        stmt.setLong(4, now);
+                        stmt.setString(5, inviteeIp);
+                        stmt.setBoolean(6, milestoneEnabled);
+                        stmt.setBoolean(7, rebateEnabled);
+                        stmt.setBoolean(8, giftEnabled);
+                        stmt.setLong(9, now);
                         stmt.executeUpdate();
                     }
                 }
 
                 int newTotal = totalInvites + 1;
-                int newSlots = quotaEnabled ? slots - 1 : slots;
+                int newSlots = consumeQuota && quotaEnabled ? slots - 1 : slots;
                 String updateInviter = "UPDATE " + tablePrefix
-                    + "players SET total_invites = ?, invite_slots = ?, last_slot_replenish = ?, last_invite_time = ?"
-                    + " WHERE uuid = ?";
+                    + "players SET total_invites = ?, invite_slots = ?, last_invite_time = ? WHERE uuid = ?";
                 try (PreparedStatement stmt = conn.prepareStatement(updateInviter)) {
                     stmt.setInt(1, newTotal);
                     stmt.setInt(2, newSlots);
-                    stmt.setLong(3, lastReplenish);
-                    stmt.setLong(4, now);
-                    stmt.setString(5, inviterUuid.toString());
+                    stmt.setLong(3, now);
+                    stmt.setString(4, inviterUuid.toString());
                     if (stmt.executeUpdate() != 1) {
                         conn.rollback();
                         return new InviteRecordResult(InviteRecordStatus.ERROR,
@@ -960,12 +1160,25 @@ public class DatabaseManager {
                     }
                 }
 
+                if (pendingTargetName != null) {
+                    try (PreparedStatement stmt = conn.prepareStatement(
+                            "DELETE FROM " + tablePrefix + "pending_invites WHERE target_name = ? AND inviter_uuid = ?")) {
+                        stmt.setString(1, pendingTargetName);
+                        stmt.setString(2, inviterUuid.toString());
+                        if (stmt.executeUpdate() != 1) {
+                            conn.rollback();
+                            return new InviteRecordResult(InviteRecordStatus.DUPLICATE,
+                                totalInvites, slots, 0L);
+                        }
+                    }
+                }
+
+                upsertBoundPlayerName(conn, inviteeName, inviteeUuid, inviterUuid, now, isMySQL);
+
                 conn.commit();
                 notifyChange(inviterUuid, "stats");
-                long next = quotaEnabled && newSlots < maxSlots
-                    ? lastReplenish + intervalMillis : 0L;
                 return new InviteRecordResult(InviteRecordStatus.SUCCESS,
-                    newTotal, newSlots, next);
+                    newTotal, newSlots, 0L, milestoneEnabled, rebateEnabled, giftEnabled);
             } catch (Exception e) {
                 try {
                     conn.rollback();
@@ -1027,6 +1240,483 @@ public class DatabaseManager {
             this.inviterUuid = inviterUuid;
             this.inviterTotalInvites = inviterTotalInvites;
             this.inviterRemainingSlots = inviterRemainingSlots;
+        }
+    }
+
+    public enum ReserveInviteStatus {
+        SUCCESS,
+        ALREADY_RESERVED,
+        QUOTA_EXHAUSTED,
+        INVITER_NOT_FOUND,
+        INVITER_LIMIT_REACHED,
+        ERROR
+    }
+
+    public record ReserveInviteResult(ReserveInviteStatus status, int remainingSlots) {
+        public boolean success() {
+            return status == ReserveInviteStatus.SUCCESS;
+        }
+    }
+
+    public record PendingInvite(String targetName, UUID inviterUuid, String inviterIp,
+                                String inviterCode) {
+    }
+
+    public CompletableFuture<ReserveInviteResult> reserveInviteForName(
+            UUID inviterUuid, String inviterIp, String targetName, String displayName) {
+        return AsyncPool.supply(() -> reserveInviteForNameSync(
+            inviterUuid, inviterIp, targetName, displayName));
+    }
+
+    public ReserveInviteResult reserveInviteForNameSync(
+            UUID inviterUuid, String inviterIp, String targetName, String displayName) {
+        boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
+            .getDatabaseConfig().getString("database.type", "sqlite"));
+        boolean quotaEnabled = plugin.getConfigManager().getConfig()
+            .getBoolean("invite_quota.enabled", true);
+        int maxInvites = plugin.getConfigManager().getConfig().getInt("invite_code.max_invites", 0);
+        long now = System.currentTimeMillis();
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                if (!isMySQL) {
+                    try (Statement busy = conn.createStatement()) {
+                        busy.execute("PRAGMA busy_timeout=5000");
+                    }
+                }
+                String inviterSql = "SELECT total_invites, invite_slots FROM " + tablePrefix
+                    + "players WHERE uuid = ?" + (isMySQL ? " FOR UPDATE" : "");
+                int totalInvites;
+                int slots;
+                try (PreparedStatement stmt = conn.prepareStatement(inviterSql)) {
+                    stmt.setString(1, inviterUuid.toString());
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        if (!rs.next()) {
+                            conn.rollback();
+                            return new ReserveInviteResult(ReserveInviteStatus.INVITER_NOT_FOUND, 0);
+                        }
+                        totalInvites = rs.getInt("total_invites");
+                        slots = Math.max(0, rs.getInt("invite_slots"));
+                    }
+                }
+                if (maxInvites > 0) {
+                    int pendingCount = 0;
+                    try (PreparedStatement stmt = conn.prepareStatement(
+                            "SELECT COUNT(*) FROM " + tablePrefix + "pending_invites WHERE inviter_uuid = ?")) {
+                        stmt.setString(1, inviterUuid.toString());
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            if (rs.next()) {
+                                pendingCount = rs.getInt(1);
+                            }
+                        }
+                    }
+                    if (totalInvites + pendingCount >= maxInvites) {
+                        conn.rollback();
+                        return new ReserveInviteResult(ReserveInviteStatus.INVITER_LIMIT_REACHED, slots);
+                    }
+                }
+                if (quotaEnabled && slots <= 0) {
+                    conn.rollback();
+                    return new ReserveInviteResult(ReserveInviteStatus.QUOTA_EXHAUSTED, 0);
+                }
+
+                String insert = (isMySQL ? "INSERT IGNORE INTO " : "INSERT OR IGNORE INTO ")
+                    + tablePrefix + "pending_invites "
+                    + "(target_name, target_display_name, inviter_uuid, inviter_ip, created_at)"
+                    + " VALUES (?, ?, ?, ?, ?)";
+                try (PreparedStatement stmt = conn.prepareStatement(insert)) {
+                    stmt.setString(1, targetName);
+                    stmt.setString(2, displayName);
+                    stmt.setString(3, inviterUuid.toString());
+                    stmt.setString(4, inviterIp);
+                    stmt.setLong(5, now);
+                    if (stmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return new ReserveInviteResult(ReserveInviteStatus.ALREADY_RESERVED, slots);
+                    }
+                }
+
+                int remaining = quotaEnabled ? slots - 1 : slots;
+                if (quotaEnabled) {
+                    try (PreparedStatement stmt = conn.prepareStatement(
+                            "UPDATE " + tablePrefix + "players SET invite_slots = ? WHERE uuid = ?")) {
+                        stmt.setInt(1, remaining);
+                        stmt.setString(2, inviterUuid.toString());
+                        if (stmt.executeUpdate() != 1) {
+                            conn.rollback();
+                            return new ReserveInviteResult(ReserveInviteStatus.ERROR, slots);
+                        }
+                    }
+                }
+                conn.commit();
+                notifyChange(inviterUuid, "stats");
+                return new ReserveInviteResult(ReserveInviteStatus.SUCCESS, remaining);
+            } catch (Exception e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                plugin.getLogger().severe("预留邀请名额失败: " + e.getMessage());
+                return new ReserveInviteResult(ReserveInviteStatus.ERROR, 0);
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("打开预留邀请事务失败: " + e.getMessage());
+            return new ReserveInviteResult(ReserveInviteStatus.ERROR, 0);
+        }
+    }
+
+    public CompletableFuture<PendingInvite> getPendingInvite(String normalizedName) {
+        return AsyncPool.supply(() -> getPendingInviteSync(normalizedName));
+    }
+
+    public PendingInvite getPendingInviteSync(String normalizedName) {
+        String sql = "SELECT p.target_display_name, p.inviter_uuid, p.inviter_ip, v.invite_code "
+            + "FROM " + tablePrefix + "pending_invites p JOIN " + tablePrefix
+            + "players v ON v.uuid = p.inviter_uuid WHERE p.target_name = ?";
+        try (Connection conn = getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, normalizedName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new PendingInvite(rs.getString("target_display_name"),
+                        UUID.fromString(rs.getString("inviter_uuid")),
+                        rs.getString("inviter_ip"), rs.getString("invite_code"));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("查询预邀请失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public CompletableFuture<InviteRecordResult> claimPendingInvite(
+            PendingInvite pending, UUID inviteeUuid, String inviteeIp, String inviteeName,
+            String normalizedName) {
+        return AsyncPool.supply(() -> recordInviteTransaction(
+            pending.inviterUuid(), inviteeUuid, inviteeIp, pending.inviterIp(), inviteeName,
+            pending.inviterCode(), false, normalizedName));
+    }
+
+    /** 认领失败/不可用时释放预邀请：删除 pending 行并归还邀请人 1 个名额。 */
+    public CompletableFuture<Void> releasePendingInvite(String normalizedName, UUID inviterUuid) {
+        return AsyncPool.run(() -> releasePendingInviteSync(normalizedName, inviterUuid));
+    }
+
+    public void releasePendingInviteSync(String normalizedName, UUID inviterUuid) {
+        boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
+            .getDatabaseConfig().getString("database.type", "sqlite"));
+        boolean quotaEnabled = plugin.getConfigManager().getConfig()
+            .getBoolean("invite_quota.enabled", true);
+        int maxSlots = plugin.getConfigManager().getConfig().getInt("invite_quota.max_slots", 0);
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                if (!isMySQL) {
+                    try (Statement busy = conn.createStatement()) {
+                        busy.execute("PRAGMA busy_timeout=5000");
+                    }
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM " + tablePrefix + "pending_invites WHERE target_name = ? AND inviter_uuid = ?")) {
+                    stmt.setString(1, normalizedName);
+                    stmt.setString(2, inviterUuid.toString());
+                    if (stmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return;
+                    }
+                }
+                if (quotaEnabled) {
+                    String select = "SELECT invite_slots FROM " + tablePrefix
+                        + "players WHERE uuid = ?" + (isMySQL ? " FOR UPDATE" : "");
+                    int current = 0;
+                    try (PreparedStatement stmt = conn.prepareStatement(select)) {
+                        stmt.setString(1, inviterUuid.toString());
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            if (rs.next()) {
+                                current = Math.max(0, rs.getInt(1));
+                            }
+                        }
+                    }
+                    int restored = maxSlots > 0 ? Math.min(maxSlots, current + 1) : current + 1;
+                    try (PreparedStatement stmt = conn.prepareStatement(
+                            "UPDATE " + tablePrefix + "players SET invite_slots = ? WHERE uuid = ?")) {
+                        stmt.setInt(1, restored);
+                        stmt.setString(2, inviterUuid.toString());
+                        stmt.executeUpdate();
+                    }
+                }
+                conn.commit();
+                notifyChange(inviterUuid, "stats");
+            } catch (Exception e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                plugin.getLogger().severe("释放预邀请名额失败: " + e.getMessage());
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("打开释放预邀请事务失败: " + e.getMessage());
+        }
+    }
+
+    public record RegistrationPoolState(boolean open, int slotsRemaining, int totalSlots,
+                                         long openedAt, long closedAt) {}
+
+    public CompletableFuture<Boolean> hasRegistrationClaim(UUID playerUuid) {
+        return AsyncPool.supply(() -> hasRegistrationClaimSync(playerUuid));
+    }
+
+    public boolean hasRegistrationClaimSync(UUID playerUuid) {
+        String sql = "SELECT COUNT(*) FROM " + tablePrefix
+            + "hidden_registration_codes WHERE claimed_uuid = ?";
+        try (Connection conn = getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("查询隐藏注册资格失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** 生成指定数量的隐藏注册码；玩家进服时自动领取，注册码本身不展示。 */
+    public CompletableFuture<RegistrationPoolState> openRegistration(int slots) {
+        return AsyncPool.supply(() -> openRegistrationSync(slots));
+    }
+
+    public RegistrationPoolState openRegistrationSync(int slots) {
+        int count = Math.max(1, slots);
+        String batchId = UUID.randomUUID().toString();
+        long now = System.currentTimeMillis();
+        boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
+            .getDatabaseConfig().getString("database.type", "sqlite"));
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                if (!isMySQL) {
+                    try (Statement busy = conn.createStatement()) {
+                        busy.execute("PRAGMA busy_timeout=5000");
+                    }
+                }
+                // 每次 open 都创建一个全新批次，废弃上一批尚未使用的注册码。
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM " + tablePrefix + "hidden_registration_codes WHERE claimed_uuid IS NULL")) {
+                    stmt.executeUpdate();
+                }
+                int created = 0;
+                while (created < count) {
+                    String code = "R" + UUID.randomUUID().toString().replace("-", "").substring(0, 15);
+                    String sql = (isMySQL ? "INSERT IGNORE INTO " : "INSERT OR IGNORE INTO ")
+                        + tablePrefix + "hidden_registration_codes "
+                        + "(code, batch_id, created_at) VALUES (?, ?, ?)";
+                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, code);
+                        stmt.setString(2, batchId);
+                        stmt.setLong(3, now);
+                        created += stmt.executeUpdate();
+                    }
+                }
+                conn.commit();
+                plugin.getLogger().info("隐藏注册邀请码池已生成，数量: " + count);
+                return new RegistrationPoolState(true, count, count, now, 0L);
+            } catch (Exception e) {
+                try { conn.rollback(); } catch (SQLException ignored) { }
+                plugin.getLogger().severe("生成隐藏注册邀请码失败: " + e.getMessage());
+                return new RegistrationPoolState(false, 0, 0, 0L, 0L);
+            } finally {
+                try { conn.setAutoCommit(true); } catch (SQLException ignored) { }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("打开隐藏注册码事务失败: " + e.getMessage());
+            return new RegistrationPoolState(false, 0, 0, 0L, 0L);
+        }
+    }
+
+    /** 关闭开放注册：只删除尚未使用的隐藏注册码，已领取记录保留审计。 */
+    public CompletableFuture<RegistrationPoolState> closeRegistration() {
+        return AsyncPool.supply(() -> {
+            executeUpdate("DELETE FROM " + tablePrefix
+                + "hidden_registration_codes WHERE claimed_uuid IS NULL");
+            return new RegistrationPoolState(false, 0, 0, 0L, System.currentTimeMillis());
+        });
+    }
+
+    public RegistrationPoolState getRegistrationPoolStateSync() {
+        String sql = "SELECT COUNT(*) AS total, "
+            + "SUM(CASE WHEN claimed_uuid IS NULL THEN 1 ELSE 0 END) AS remaining "
+            + "FROM " + tablePrefix + "hidden_registration_codes "
+            + "WHERE batch_id = (SELECT batch_id FROM " + tablePrefix
+            + "hidden_registration_codes ORDER BY created_at DESC LIMIT 1)";
+        try (Connection conn = getConnection(); PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            int total = 0;
+            int remaining = 0;
+            if (rs.next()) {
+                total = rs.getInt("total");
+                remaining = rs.getInt("remaining");
+            }
+            return new RegistrationPoolState(remaining > 0, remaining, total, 0L, 0L);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("查询隐藏注册码池失败: " + e.getMessage());
+            return new RegistrationPoolState(false, 0, 0, 0L, 0L);
+        }
+    }
+
+    public CompletableFuture<Boolean> claimRegistrationSlot(UUID playerUuid, String playerName) {
+        return AsyncPool.supply(() -> claimRegistrationSlotSync(playerUuid, playerName));
+    }
+
+    /** 原子领取一个隐藏注册码；仅获得入场资格，不建立邀请关系或发放邀请奖励。 */
+    public boolean claimRegistrationSlotSync(UUID playerUuid, String playerName) {
+        boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
+            .getDatabaseConfig().getString("database.type", "sqlite"));
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                if (!isMySQL) {
+                    try (Statement busy = conn.createStatement()) {
+                        busy.execute("PRAGMA busy_timeout=5000");
+                    }
+                }
+                if (hasRegistrationClaimOnConnection(conn, playerUuid, isMySQL)) {
+                    conn.commit();
+                    return true;
+                }
+                String select = "SELECT code FROM " + tablePrefix
+                    + "hidden_registration_codes WHERE claimed_uuid IS NULL LIMIT 1"
+                    + (isMySQL ? " FOR UPDATE" : "");
+                String code;
+                try (PreparedStatement stmt = conn.prepareStatement(select);
+                     ResultSet rs = stmt.executeQuery()) {
+                    if (!rs.next()) {
+                        conn.rollback();
+                        return false;
+                    }
+                    code = rs.getString("code");
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "UPDATE " + tablePrefix + "hidden_registration_codes "
+                            + "SET claimed_uuid = ?, claimed_name = ?, claimed_at = ? "
+                            + "WHERE code = ? AND claimed_uuid IS NULL")) {
+                    stmt.setString(1, playerUuid.toString());
+                    stmt.setString(2, playerName);
+                    stmt.setLong(3, System.currentTimeMillis());
+                    stmt.setString(4, code);
+                    if (stmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return false;
+                    }
+                }
+                conn.commit();
+                return true;
+            } catch (Exception e) {
+                try { conn.rollback(); } catch (SQLException ignored) { }
+                // 同一 UUID 跨服同时领取：另一服成功后，本服也应视为有资格。
+                if (hasRegistrationClaimSync(playerUuid)) {
+                    return true;
+                }
+                plugin.getLogger().severe("领取隐藏注册码失败: " + e.getMessage());
+                return false;
+            } finally {
+                try { conn.setAutoCommit(true); } catch (SQLException ignored) { }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("打开隐藏注册码领取事务失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean hasRegistrationClaimOnConnection(Connection conn, UUID playerUuid,
+                                                       boolean lock) throws SQLException {
+        String sql = "SELECT code FROM " + tablePrefix
+            + "hidden_registration_codes WHERE claimed_uuid = ?" + (lock ? " FOR UPDATE" : "");
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** Adds newly earned playtime slots and advances the persisted period marker atomically. */
+    public CompletableFuture<Integer> grantPlaytimeSlots(UUID uuid, int eligiblePeriods) {
+        return AsyncPool.supply(() -> grantPlaytimeSlotsSync(uuid, eligiblePeriods));
+    }
+
+    public int grantPlaytimeSlotsSync(UUID uuid, int eligiblePeriods) {
+        if (eligiblePeriods <= 0) {
+            return 0;
+        }
+        boolean isMySQL = "mysql".equalsIgnoreCase(plugin.getConfigManager()
+            .getDatabaseConfig().getString("database.type", "sqlite"));
+        int maxSlots = plugin.getConfigManager().getConfig().getInt("invite_quota.max_slots", 0);
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                String sql = "SELECT invite_slots, quota_periods_granted FROM " + tablePrefix
+                    + "players WHERE uuid = ?" + (isMySQL ? " FOR UPDATE" : "");
+                int slots;
+                int grantedPeriods;
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, uuid.toString());
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        if (!rs.next()) {
+                            conn.rollback();
+                            return 0;
+                        }
+                        slots = Math.max(0, rs.getInt("invite_slots"));
+                        grantedPeriods = Math.max(0, rs.getInt("quota_periods_granted"));
+                    }
+                }
+                if (eligiblePeriods <= grantedPeriods) {
+                    conn.rollback();
+                    return 0;
+                }
+                int earned = eligiblePeriods - grantedPeriods;
+                int newSlots = maxSlots <= 0 ? slots + earned : Math.min(maxSlots, slots + earned);
+                int added = newSlots - slots;
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "UPDATE " + tablePrefix
+                            + "players SET invite_slots = ?, quota_periods_granted = ? WHERE uuid = ?")) {
+                    stmt.setInt(1, newSlots);
+                    stmt.setInt(2, eligiblePeriods);
+                    stmt.setString(3, uuid.toString());
+                    if (stmt.executeUpdate() != 1) {
+                        conn.rollback();
+                        return 0;
+                    }
+                }
+                conn.commit();
+                if (added > 0) {
+                    notifyChange(uuid, "stats");
+                }
+                return added;
+            } catch (Exception e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                plugin.getLogger().severe("发放游玩时长邀请名额失败: " + e.getMessage());
+                return 0;
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("打开游玩时长名额事务失败: " + e.getMessage());
+            return 0;
         }
     }
 
@@ -1110,6 +1800,12 @@ public class DatabaseManager {
                         return new PunishmentResult(PunishmentStatus.ALREADY_PUNISHED,
                             inviteeUuid, inviterUuid, inviterTotal, inviterSlots);
                     }
+                }
+
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM " + tablePrefix + "bound_player_names WHERE player_uuid = ?")) {
+                    stmt.setString(1, inviteeUuid.toString());
+                    stmt.executeUpdate();
                 }
 
                 int newTotal = deductCount ? Math.max(0, inviterTotal - 1) : inviterTotal;
@@ -1966,6 +2662,12 @@ public class DatabaseManager {
             }
 
             try (PreparedStatement stmt = conn.prepareStatement(
+                    "DELETE FROM " + tablePrefix + "bound_player_names WHERE player_uuid = ?")) {
+                stmt.setString(1, uuid.toString());
+                stmt.executeUpdate();
+            }
+
+            try (PreparedStatement stmt = conn.prepareStatement(
                     "DELETE FROM " + tablePrefix + "pending_milestones WHERE player_uuid = ?")) {
                 stmt.setString(1, uuid.toString());
                 stmt.executeUpdate();
@@ -2213,6 +2915,7 @@ public class DatabaseManager {
         data.totalInvites = rs.getInt("total_invites");
         data.inviteSlots = rs.getInt("invite_slots");
         data.lastSlotReplenish = rs.getLong("last_slot_replenish");
+        data.quotaPeriodsGranted = rs.getInt("quota_periods_granted");
         data.claimedMilestones = rs.getString("claimed_milestones");
         data.announcedMilestones = rs.getString("announced_milestones");
         data.giftId = rs.getString("gift_id");
@@ -2239,6 +2942,7 @@ public class DatabaseManager {
         public int totalInvites;
         public int inviteSlots;
         public long lastSlotReplenish;
+        public int quotaPeriodsGranted;
         public String claimedMilestones;
         public String announcedMilestones;
         public String giftId;

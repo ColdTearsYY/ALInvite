@@ -33,6 +33,7 @@ commands:
     - "&e/alinvite bind &7- 输入邀请码绑定"
     - "&e/alinvite code &7- 查看你的邀请码"
     - "&e/alinvite stats &7- 查看邀请统计"
+    - "&e/alinvite add <玩家名> &7- 消耗一个邀请名额，预先邀请未登录玩家"
     - "&6===== ALInvite 管理员指令 ====="
     - "&e/alinvite admin &7- 管理指令帮助"
   buygift:
@@ -42,6 +43,19 @@ commands:
     fail_money: "&c金币不足，需要 {price} 金币"
     fail_points: "&c点券不足，需要 {price} 点券"
     no_permission: "&c您是新玩家，暂时无法购买礼包"
+  add:
+    usage: "&c用法: /alinvite add <未登录过的玩家名>"
+    no_permission: "&c只有已解锁邀请码的传火者才能预邀请玩家"
+    invalid_name: "&c玩家名无效，只允许 3-16 位英文字母、数字和下划线"
+    already_joined: "&c该玩家已经登录过服务器，不能使用预邀请"
+    already_reserved: "&c该玩家已经被预邀请"
+    self: "&c不能预邀请你自己"
+    quota_exhausted: "&c你当前没有可用邀请名额"
+    inviter_limit_reached: "&c你已经达到最大邀请数量"
+    failed: "&c预邀请失败，请稍后重试"
+    success: "&a已预邀请玩家 &e{player}&a，并消耗 1 个邀请名额；剩余名额: &e{remaining}"
+    auto_bound: "&a你已通过预邀请自动完成邀请码绑定，无需手动输入"
+    auto_bind_failed: "&c预邀请自动绑定失败，请在宽限期内使用 /alinvite bind [邀请码]"
   admin:
     help:
       - "&6===== ALInvite 管理指令 ====="
@@ -63,6 +77,8 @@ commands:
       - "&e/alinvite admin contrib deduct <玩家> <金额> &7- 扣除贡献返点"
       - "&e/alinvite admin contrib clear <玩家> &7- 清空贡献返点"
       - "&e/alinvite admin contrib h <玩家> <金额> &7- 兑换贡献返点"
+      - "&e/alinvite admin open <数量> &7- 生成隐藏注册码并开放注册"
+      - "&e/alinvite admin close &7- 关闭开放注册，未使用注册码作废"
       - "&e/alinvite givedj <玩家> <数量> &7- 为玩家充值点券"
       - "&6============================"
     givecode_success: "&a已为玩家 {player} 生成邀请码: {invite_code}"
@@ -79,6 +95,10 @@ commands:
     punish_already: "&e被邀请人 {invitee} 已经执行过连带处罚，无需重复操作"
     punish_not_found: "&c找不到该玩家的有效邀请关系"
     punish_usage: "&c用法: /alinvite admin punish <被邀请人> [原因]"
+    registration_open_usage: "&c用法: /alinvite admin open <数量>（1-100000）"
+    registration_open_success: "&a已生成并开放 &e{amount} &a个隐藏注册名额"
+    registration_close_success: "&a已关闭开放注册，未使用的隐藏注册码已作废"
+    registration_failed: "&c生成隐藏注册码失败，请检查控制台日志"
 
 # 绑定 / 输入对话框
 dialog:
@@ -90,6 +110,16 @@ dialog:
   cancel: "&c已取消邀请码输入"
   ip_limit: "&c你的 IP 已被其他玩家使用过邀请码"
   self_invite: "&c你不能使用自己的邀请码"
+
+# 未绑定登录限制
+binding_gate:
+  join_prompt: "&e请输入邀请码~ &f/alinvite bind [邀请码]"
+  reminder: "&e请输入 &f/alinvite bind [邀请码] &e绑定你的邀请码"
+  kick_message: "&c请输入邀请码~\n&f使用 /alinvite bind [邀请码] 完成绑定后才能进入服务器"
+  registration_success: "&a你已获得本期开放注册资格，可以直接进入服务器；注册码不会显示。"
+# 邀请名额
+invite_quota:
+  granted: "&a你的累计游玩时长已达到要求，获得 &e{amount} &a个邀请名额"
 
 # 礼包商店
 buygift:

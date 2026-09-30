@@ -33,6 +33,7 @@ commands:
     - "&e/alinvite bind &7- Input invite code to bind"
     - "&e/alinvite code &7- View your invite code"
     - "&e/alinvite stats &7- View invite stats"
+    - "&e/alinvite add <player> &7- Spend one invite slot to pre-invite a new player"
     - "&6===== ALInvite Admin Commands ====="
     - "&e/alinvite admin &7- Admin commands help"
   buygift:
@@ -42,6 +43,19 @@ commands:
     fail_money: "&cInsufficient gold, need {price} gold"
     fail_points: "&cInsufficient points, need {price} points"
     no_permission: "&cYou are a new player, you cannot purchase gifts yet"
+  add:
+    usage: "&cUsage: /alinvite add <player-who-has-never-joined>"
+    no_permission: "&cOnly veterans with an unlocked invite code can pre-invite players"
+    invalid_name: "&cInvalid player name. Use 3-16 letters, numbers, or underscores"
+    already_joined: "&cThat player has already joined and cannot be pre-invited"
+    already_reserved: "&cThat player has already been pre-invited"
+    self: "&cYou cannot pre-invite yourself"
+    quota_exhausted: "&cYou have no invite slots available"
+    inviter_limit_reached: "&cYou have reached the maximum number of invites"
+    failed: "&cPre-invite failed. Please try again later"
+    success: "&aPre-invited &e{player}&a and spent one invite slot. Remaining: &e{remaining}"
+    auto_bound: "&aYour pre-invite was claimed automatically; no invite code is required"
+    auto_bind_failed: "&cAutomatic pre-invite binding failed. Use /alinvite bind [code] during the grace period"
   admin:
     help:
       - "&6===== ALInvite Admin Commands ====="
@@ -63,6 +77,8 @@ commands:
       - "&e/alinvite admin contrib deduct <player> <amount> &7- Deduct contribution rebate"
       - "&e/alinvite admin contrib clear <player> &7- Clear contribution rebate"
       - "&e/alinvite admin contrib h <player> <amount> &7- Exchange contribution rebate"
+      - "&e/alinvite admin open <amount> &7- Generate hidden registration codes"
+      - "&e/alinvite admin close &7- Close registration and discard unused codes"
       - "&e/alinvite givedj <player> <amount> &7- Recharge points for player"
       - "&6============================"
     givecode_success: "&aGenerated invite code {invite_code} for player {player}"
@@ -79,6 +95,10 @@ commands:
     punish_already: "&eInvitee {invitee} has already been penalized"
     punish_not_found: "&cNo valid invite relationship found for this player"
     punish_usage: "&cUsage: /alinvite admin punish <invitee> [reason]"
+    registration_open_usage: "&cUsage: /alinvite admin open <amount> (1-100000)"
+    registration_open_success: "&aGenerated &e{amount} &ahidden registration slots"
+    registration_close_success: "&aRegistration closed; unused hidden codes were discarded"
+    registration_failed: "&cFailed to generate hidden registration codes; check the console"
 
 # Dialog
 dialog:
@@ -90,6 +110,17 @@ dialog:
   cancel: "&cCancelled invite code input"
   ip_limit: "&cYour IP has been used by another player for invite code"
   self_invite: "&cYou cannot use your own invite code"
+
+# Unbound-player login gate
+binding_gate:
+  join_prompt: "&ePlease enter an invite code: &f/alinvite bind [code]"
+  reminder: "&eUse &f/alinvite bind [code] &eto bind your invite code"
+  kick_message: "&cAn invite code is required.\n&fUse /alinvite bind [code] before the grace period expires"
+  registration_success: "&aYou received an open-registration slot and may enter directly; the code is hidden."
+
+# Invite slots
+invite_quota:
+  granted: "&aYour total playtime earned you &e{amount} &ainvite slot(s)"
 
 # Gift shop
 buygift:

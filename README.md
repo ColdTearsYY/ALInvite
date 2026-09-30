@@ -27,7 +27,10 @@
 本版本在 v2.0.0 的 Folia 调度与数据层重构基础上，按 ourTravel「传火邀请制」实施：
 
 - **兼容目标**：保持 `api-version: '1.20'` 与 `folia-supported: true`，使用 Folia Global/Entity/Async 调度器；已在 Java 21 下构建，可运行于 test-server 的 Lophine 26.2 / Java 25。
-- **传火配额**：每名传火者默认 1 个邀请名额，用完后每 24 小时恢复 1 个；名额刷新、邀请记录、邀请总数在 SQLite/MySQL 事务中一起提交，避免并发/跨服超发。
+- **登录绑定门禁**：未绑定邀请码且未被预邀请的玩家进入后会锁定在原地；默认宽限 60 秒、每 10 秒提醒一次，超时踢出，均可在 `binding_gate` 配置。
+- **预邀请**：传火者可用 `/alinvite add <未登录玩家名>` 原子消耗一个邀请名额；目标首次登录时自动建立邀请关系并获得礼包，无需手动输入邀请码。
+- **名额获取模式**：`invite_quota.grant_mode` 支持 `ONCE`（首次累计游玩 24 小时给 1 个名额）和 `RECURRING`（每累计 24 小时给 1 个名额），阶段发放记录持久化，跨服不会重复发放。
+- **隐藏开放注册池**：管理员执行 `/alinvite admin open <数量>` 后，插件后台生成指定数量的隐藏注册码；新人进入时自动领取一个，不显示注册码、不建立邀请关系，仍可之后手动绑定朋友的邀请码。
 - **奖励默认值**：新人礼包为面包 32、石镐 1、火把 16、PlayerPoints 20；邀请 1/3/10 人里程碑分别为 10/50/200 点券，默认手动领取。
 - **24 小时解锁**：优先使用 PlaceholderAPI 在线时长占位符；PAPI 不存在或占位符未解析时回退 Bukkit `PLAY_ONE_MINUTE` 统计。
 - **处罚审计**：`/alinvite admin punish <被邀请人> [原因]` 由管理员确认违规后手动执行；记录不会删除，重复执行不会重复扣减。插件不自动监听封禁。
@@ -223,6 +226,7 @@ main_menu:
 | ------------------- | ------------------ | -------- |
 | `/alinvite`         | `alinvite.use`     | 打开主菜单    |
 | `/alinvite bind <邀请码>`    | `alinvite.use`     | 直接绑定邀请码    |
+| `/alinvite add <玩家名>` | `alinvite.use` + `alinvite.veteran` | 消耗一个名额预邀请从未登录的玩家 |
 | `/alinvite code`    | `alinvite.use`     | 查看自己的邀请码 |
 | `/alinvite stats`   | `alinvite.use`     | 查看邀请统计信息 |
 | `/alinvite buygift` | `alinvite.buygift` | 打开礼包商店   |
@@ -239,6 +243,8 @@ main_menu:
 | `/alinvite admin addinvite <玩家> <数量>` | `alinvite.admin` | 增加邀请次数       |
 | `/alinvite admin reset <玩家>`          | `alinvite.admin` | 重置玩家邀请数据     |
 | `/alinvite admin punish <被邀请人> [原因]` | `alinvite.admin` | 确认违规后执行连带处罚（不自动监听封禁） |
+| `/alinvite admin open <数量>` | `alinvite.admin` | 生成指定数量的隐藏注册码并开放注册 |
+| `/alinvite admin close` | `alinvite.admin` | 关闭开放注册并作废未使用注册码 |
 | `/alinvite admin announce`            | `alinvite.admin` | 发送全服公告       |
 | `/alinvite givedj <玩家> <金额>`          | `alinvite.admin` | 给玩家充值点券并处理返点 |
 

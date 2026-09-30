@@ -44,6 +44,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         switch (subCommand) {
             case "code", "generate" -> handleCode(sender);
             case "bind" -> handleBind(sender, args);
+            case "add" -> handleAdd(sender, args);
             case "stats" -> handleStats(sender);
             case "contrib" -> handleContribution(sender);
             case "buygift" -> handleBuyGift(sender);
@@ -130,6 +131,67 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     player.sendMessage(reason);
                 }
             }));
+    }
+
+    private void handleAdd(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(plugin.getConfigManager().getMessage("errors.player_only"));
+            return;
+        }
+        String veteranPermission = plugin.getConfigManager().getConfig()
+            .getString("invite_code.veteran_permission", "alinvite.veteran");
+        if (!player.hasPermission("alinvite.use") || !player.hasPermission(veteranPermission)) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.no_permission", player));
+            return;
+        }
+        if (args.length < 2) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.usage", player));
+            return;
+        }
+        String targetName = args[1].trim();
+        if (!targetName.matches("[A-Za-z0-9_]{3,16}")) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.invalid_name", player));
+            return;
+        }
+        if (targetName.equalsIgnoreCase(player.getName())) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.self", player));
+            return;
+        }
+        if (Bukkit.getPlayerExact(targetName) != null) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player));
+            return;
+        }
+        String normalizedName = targetName.toLowerCase(java.util.Locale.ROOT);
+        String inviterIp = player.getAddress() == null || player.getAddress().getAddress() == null
+            ? null : player.getAddress().getAddress().getHostAddress();
+        if (inviterIp == null) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.failed", player));
+            return;
+        }
+
+        plugin.getDatabaseManager().findBoundPlayerByName(normalizedName).thenCompose(boundUuid -> {
+            if (boundUuid != null) {
+                plugin.getScheduler().runAtPlayer(player, () ->
+                    player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player)));
+                return CompletableFuture.completedFuture(null);
+            }
+            return plugin.getInviteManager().ensureInviteCode(player.getUniqueId())
+                .thenCompose(code -> plugin.getDatabaseManager().reserveInviteForName(
+                    player.getUniqueId(), inviterIp, normalizedName, targetName))
+                .thenAccept(result -> plugin.getScheduler().runAtPlayer(player, () -> {
+                    String path = switch (result.status()) {
+                        case SUCCESS -> "commands.add.success";
+                        case ALREADY_RESERVED -> "commands.add.already_reserved";
+                        case QUOTA_EXHAUSTED -> "commands.add.quota_exhausted";
+                        case INVITER_LIMIT_REACHED -> "commands.add.inviter_limit_reached";
+                        default -> "commands.add.failed";
+                    };
+                    String message = plugin.getConfigManager().getMessage(path, player)
+                        .replace("{player}", targetName)
+                        .replace("{remaining}", String.valueOf(result.remainingSlots()));
+                    player.sendMessage(message);
+                }));
+        });
     }
 
     private void handleHelp(CommandSender sender) {
@@ -223,6 +285,32 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 plugin.reload();
                 sender.sendMessage(plugin.getConfigManager().getMessage("commands.reload"));
             }
+            case "open" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(plugin.getConfigManager().getMessage("commands.admin.registration_open_usage"));
+                    return;
+                }
+                int amount;
+                try {
+                    amount = Integer.parseInt(args[2]);
+                    if (amount <= 0 || amount > 100000) {
+                        throw new NumberFormatException();
+                    }
+                } catch (NumberFormatException e) {
+                    sender.sendMessage(plugin.getConfigManager().getMessage("commands.admin.registration_open_usage"));
+                    return;
+                }
+                plugin.getDatabaseManager().openRegistration(amount).thenAccept(state -> {
+                    String path = state.open()
+                        ? "commands.admin.registration_open_success"
+                        : "commands.admin.registration_failed";
+                    sender.sendMessage(plugin.getConfigManager().getMessage(path)
+                        .replace("{amount}", String.valueOf(state.slotsRemaining())));
+                });
+            }
+            case "close" -> plugin.getDatabaseManager().closeRegistration().thenAccept(state ->
+                sender.sendMessage(plugin.getConfigManager().getMessage(
+                    "commands.admin.registration_close_success")));
             case "givecode" -> {
                 if (args.length < 3) {
                     sender.sendMessage("用法: /alinvite admin givecode <玩家>");
@@ -685,12 +773,12 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         List<String> completions = new ArrayList<>();
 
         if (args.length == 1) {
-            completions.addAll(Arrays.asList("code", "generate", "stats", "contrib", "buygift", "help", "admin", "givedj", "bind"));
+            completions.addAll(Arrays.asList("code", "generate", "stats", "contrib", "buygift", "help", "admin", "givedj", "bind", "add"));
             return filterByInput(completions, args[0]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "punish", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed"));
+            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "punish", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed", "open", "close"));
             return filterByInput(completions, args[1]);
         }
 

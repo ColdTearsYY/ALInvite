@@ -9,6 +9,7 @@ import com.alinvite.listeners.InviteListener;
 import com.alinvite.listeners.LuckPermsListener;
 import com.alinvite.listeners.PermissionGroupRewardListener;
 import com.alinvite.manager.AutoVeteranManager;
+import com.alinvite.manager.BindingGateManager;
 import com.alinvite.manager.CacheManager;
 import com.alinvite.manager.GiftManager;
 import com.alinvite.manager.InviteManager;
@@ -43,6 +44,7 @@ public class ALInvite extends JavaPlugin {
     private PointsRebateManager pointsRebateManager;
     private LeaderboardManager leaderboardManager;
     private AutoVeteranManager autoVeteranManager;
+    private BindingGateManager bindingGateManager;
     private RedisManager redisManager;
     private CrossServerSync crossServerSync;
     private int permissionGroupCheckTaskId = -1;
@@ -126,6 +128,9 @@ public class ALInvite extends JavaPlugin {
         }
         if (autoVeteranManager != null) {
             autoVeteranManager.shutdown();
+        }
+        if (bindingGateManager != null) {
+            bindingGateManager.shutdown();
         }
         // 4. 关闭 Redis 与 IO 线程池、数据库
         if (redisManager != null) {
@@ -226,6 +231,9 @@ public class ALInvite extends JavaPlugin {
         if (autoVeteranManager != null) {
             autoVeteranManager.shutdown();
         }
+        if (bindingGateManager != null) {
+            bindingGateManager.shutdown();
+        }
 
         cacheManager = new CacheManager(this);
         rewardService = new RewardService(this);
@@ -236,6 +244,7 @@ public class ALInvite extends JavaPlugin {
         pointsRebateManager = new PointsRebateManager(this);
         leaderboardManager = new LeaderboardManager(this);
         autoVeteranManager = new AutoVeteranManager(this);
+        bindingGateManager = new BindingGateManager(this);
         crossServerSync = new CrossServerSync(this);
         // 写穿透：所有数据库变更立即失效本机缓存并广播集群（ALFriends 同款，零延迟）
         databaseManager.setDataChangeListener(crossServerSync::onDataChanged);
@@ -268,6 +277,7 @@ public class ALInvite extends JavaPlugin {
     private void initListeners() {
         permissionGroupRewardListener = new PermissionGroupRewardListener(this);
         Bukkit.getPluginManager().registerEvents(new InviteListener(this), this);
+        Bukkit.getPluginManager().registerEvents(bindingGateManager, this);
         Bukkit.getPluginManager().registerEvents(menuManager.getClickListener(), this);
         Bukkit.getPluginManager().registerEvents(menuManager.getInputService(), this);
         Bukkit.getPluginManager().registerEvents(permissionGroupRewardListener, this);
@@ -336,6 +346,10 @@ public class ALInvite extends JavaPlugin {
 
     public InviteManager getInviteManager() {
         return inviteManager;
+    }
+
+    public BindingGateManager getBindingGateManager() {
+        return bindingGateManager;
     }
 
     public MilestoneManager getMilestoneManager() {

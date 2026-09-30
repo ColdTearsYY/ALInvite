@@ -43,6 +43,15 @@ invite_code:
   # 兼容旧版的累计邀请上限（0 = 不限制）。传火配额由 invite_quota 独立控制。
   max_invites: 0
 
+# 未绑定玩家登录限制
+binding_gate:
+  # 未绑定邀请码且没有预邀请的玩家登录后锁定在原地
+  enabled: true
+  # 输入邀请码的宽限期（秒），超时后踢出服务器
+  grace_period_seconds: 60
+  # 宽限期内的聊天提醒间隔（秒）
+  reminder_interval_seconds: 10
+
 # 自动老玩家
 # 通过 PlaceholderAPI 检测玩家在线时间，自动授予老玩家 (veteran) 权限
 auto_veteran:
@@ -85,12 +94,14 @@ whitelist_on_bind:
   enabled: true
   command: "whitelist add {player}"
 
-# 每人初始 1 个邀请名额，用完后每 24 小时恢复 1 个，最多积累 1 个。
+# 邀请资格（可用邀请名额）按累计游玩时长发放。
 invite_quota:
   enabled: true
-  initial_slots: 1
-  max_slots: 1
-  replenish_interval_hours: 24
+  # ONCE：首次达到 hours_per_slot 只发放 1 个名额；RECURRING：每达到一次该时长发放 1 个。
+  grant_mode: "ONCE"
+  hours_per_slot: 24
+  # 可同时持有的名额上限；0 = 不限制。RECURRING 建议保持 0，避免丢失已完成的时长阶段。
+  max_slots: 0
 
 # 连带处罚：管理员确认被邀请人违规后手动执行 /alinvite admin punish。
 # 插件不自动监听封禁；处罚保留邀请记录，仅扣减邀请人统计和当前可用名额。
