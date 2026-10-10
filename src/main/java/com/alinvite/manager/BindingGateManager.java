@@ -2,21 +2,32 @@ package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
 import com.alinvite.config.ConfigManager;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Keeps unbound players at their join location until they bind or the grace period expires. */
+/** Keeps unbound players frozen (spectator + anchored) until they bind or the grace period expires. */
 public final class BindingGateManager implements Listener {
+
+    private static final Set<String> ALLOWED_COMMAND_ROOTS = Set.of("alinvite", "ali", "invite");
 
     private record Session(Location anchor, long deadlineMillis, long nextReminderMillis) {
         Session withNextReminder(long nextReminder) {
@@ -26,6 +37,7 @@ public final class BindingGateManager implements Listener {
 
     private final ALInvite plugin;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+    private final Map<UUID, GameMode> restoreModes = new ConcurrentHashMap<>();
     private int taskId = -1;
 
     public BindingGateManager(ALInvite plugin) {
@@ -37,6 +49,36 @@ public final class BindingGateManager implements Listener {
 
     public boolean isEnabled() {
         return plugin.getConfigManager().getConfig().getBoolean("binding_gate.enabled", true);
+    }
+
+    private boolean spectatorLockEnabled() {
+        return plugin.getConfigManager().getConfig().getBoolean("binding_gate.spectator_lock", true);
+    }
+
+    private boolean blockCommandsEnabled() {
+        return plugin.getConfigManager().getConfig().getBoolean("binding_gate.block_commands", true);
+    }
+
+    private boolean blockChatEnabled() {
+        return plugin.getConfigManager().getConfig().getBoolean("binding_gate.block_chat", true);
+    }
+
+    private boolean positionLockEnabled() {
+        return plugin.getConfigManager().getConfig().getBoolean("binding_gate.position_lock", true);
+    }
+
+    private boolean blockInteractionEnabled() {
+        return plugin.getConfigManager().getConfig().getBoolean("binding_gate.block_interaction", true);
+    }
+
+    private GameMode fallbackGameMode() {
+        String raw = plugin.getConfigManager().getConfig()
+            .getString("binding_gate.restore_gamemode", "SURVIVAL");
+        try {
+            return GameMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            return GameMode.SURVIVAL;
+        }
     }
 
     public void lock(Player player) {
@@ -61,6 +103,27 @@ public final class BindingGateManager implements Listener {
         }
     }
 
+    /** Prompts the player and forces spectator mode so damage/interaction cannot occur. */
+    public void enforceLock(Player player) {
+        prompt(player);
+        enforceSpectator(player);
+    }
+
+    private void enforceSpectator(Player player) {
+        if (!isEnabled() || !spectatorLockEnabled()) {
+            return;
+        }
+        if (!sessions.containsKey(player.getUniqueId())) {
+            return;
+        }
+        GameMode current = player.getGameMode();
+        GameMode restore = (current == GameMode.SPECTATOR) ? fallbackGameMode() : current;
+        restoreModes.put(player.getUniqueId(), restore);
+        if (current != GameMode.SPECTATOR) {
+            player.setGameMode(GameMode.SPECTATOR);
+        }
+    }
+
     public void prompt(Player player) {
         if (sessions.containsKey(player.getUniqueId())) {
             player.sendMessage(message("binding_gate.join_prompt",
@@ -70,6 +133,14 @@ public final class BindingGateManager implements Listener {
 
     public void unlock(UUID uuid) {
         sessions.remove(uuid);
+        GameMode restore = restoreModes.remove(uuid);
+        if (restore == null) {
+            return;
+        }
+        Player player = plugin.getServer().getPlayer(uuid);
+        if (player != null && player.isOnline() && player.getGameMode() == GameMode.SPECTATOR) {
+            plugin.getScheduler().runAtPlayer(player, () -> player.setGameMode(restore));
+        }
     }
 
     public boolean isLocked(UUID uuid) {
@@ -78,6 +149,7 @@ public final class BindingGateManager implements Listener {
 
     public void shutdown() {
         sessions.clear();
+        restoreModes.clear();
         if (taskId != -1) {
             plugin.getScheduler().cancel(taskId);
             taskId = -1;
@@ -94,6 +166,7 @@ public final class BindingGateManager implements Listener {
             Player player = plugin.getServer().getPlayer(uuid);
             if (player == null || !player.isOnline()) {
                 sessions.remove(uuid, session);
+                restoreModes.remove(uuid);
                 continue;
             }
             if (now >= session.deadlineMillis()) {
@@ -118,6 +191,9 @@ public final class BindingGateManager implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
+        if (!positionLockEnabled()) {
+            return;
+        }
         Session session = sessions.get(event.getPlayer().getUniqueId());
         if (session == null || event.getTo() == null) {
             return;
@@ -137,14 +213,86 @@ public final class BindingGateManager implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent event) {
-        if (sessions.containsKey(event.getPlayer().getUniqueId())) {
+        if (positionLockEnabled() && sessions.containsKey(event.getPlayer().getUniqueId())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        unlock(event.getPlayer().getUniqueId());
+        Player player = event.getPlayer();
+        UUID uuid = player.getUniqueId();
+        GameMode restore = restoreModes.remove(uuid);
+        if (restore != null && player.getGameMode() == GameMode.SPECTATOR) {
+            player.setGameMode(restore);
+        }
+        sessions.remove(uuid);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onCommand(PlayerCommandPreprocessEvent event) {
+        if (!blockCommandsEnabled() || !isLocked(event.getPlayer().getUniqueId())) {
+            return;
+        }
+        if (!ALLOWED_COMMAND_ROOTS.contains(commandRoot(event.getMessage()))) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage(message("binding_gate.command_blocked",
+                "&c绑定邀请码之前只能使用 &f/alinvite bind [邀请码]"));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onChat(AsyncPlayerChatEvent event) {
+        if (blockChatEnabled() && isLocked(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage(message("binding_gate.chat_blocked",
+                "&c绑定邀请码之前无法聊天，请先 /alinvite bind [邀请码]"));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        if (blockInteractionEnabled() && event.getPlayer() instanceof Player player
+                && isLocked(player.getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (blockInteractionEnabled() && event.getWhoClicked() instanceof Player player
+                && isLocked(player.getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDropItem(PlayerDropItemEvent event) {
+        if (blockInteractionEnabled() && isLocked(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInteract(PlayerInteractEvent event) {
+        if (blockInteractionEnabled() && isLocked(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    private static String commandRoot(String rawMessage) {
+        if (rawMessage == null) {
+            return "";
+        }
+        String trimmed = rawMessage.startsWith("/") ? rawMessage.substring(1) : rawMessage;
+        trimmed = trimmed.trim();
+        int space = trimmed.indexOf(' ');
+        String root = (space == -1) ? trimmed : trimmed.substring(0, space);
+        int colon = root.indexOf(':');
+        if (colon != -1) {
+            root = root.substring(colon + 1);
+        }
+        return root.toLowerCase(Locale.ROOT);
     }
 
     private String message(String path, String fallback) {

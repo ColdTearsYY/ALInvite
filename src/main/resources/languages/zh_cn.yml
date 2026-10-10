@@ -117,6 +117,8 @@ binding_gate:
   reminder: "&e请输入 &f/alinvite bind [邀请码] &e绑定你的邀请码"
   kick_message: "&c请输入邀请码~\n&f使用 /alinvite bind [邀请码] 完成绑定后才能进入服务器"
   registration_success: "&a你已获得本期开放注册资格，可以直接进入服务器；注册码不会显示。"
+  command_blocked: "&c绑定邀请码之前只能使用 &f/alinvite bind [邀请码]"
+  chat_blocked: "&c绑定邀请码之前无法聊天，请先 &f/alinvite bind [邀请码]"
 # 邀请名额
 invite_quota:
   granted: "&a你的累计游玩时长已达到要求，获得 &e{amount} &a个邀请名额"

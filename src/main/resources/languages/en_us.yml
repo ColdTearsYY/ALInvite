@@ -117,6 +117,8 @@ binding_gate:
   reminder: "&eUse &f/alinvite bind [code] &eto bind your invite code"
   kick_message: "&cAn invite code is required.\n&fUse /alinvite bind [code] before the grace period expires"
   registration_success: "&aYou received an open-registration slot and may enter directly; the code is hidden."
+  command_blocked: "&cBefore binding you may only use &f/alinvite bind [code]"
+  chat_blocked: "&cYou cannot chat before binding; use &f/alinvite bind [code]"
 
 # Invite slots
 invite_quota:

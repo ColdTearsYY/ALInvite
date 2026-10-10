@@ -56,12 +56,12 @@ public class InviteListener implements Listener {
                 return;
             }
             plugin.getScheduler().runAtPlayer(player, () ->
-                plugin.getBindingGateManager().prompt(player));
+                plugin.getBindingGateManager().enforceLock(player));
         }).exceptionally(throwable -> {
             plugin.getLogger().warning("玩家注册资格检查失败 (" + player.getName()
                 + "): " + throwable.getMessage());
             plugin.getScheduler().runAtPlayer(player, () ->
-                plugin.getBindingGateManager().prompt(player));
+                plugin.getBindingGateManager().enforceLock(player));
             return null;
         });
     }

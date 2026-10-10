@@ -51,6 +51,20 @@ binding_gate:
   grace_period_seconds: 60
   # 宽限期内的聊天提醒间隔（秒）
   reminder_interval_seconds: 10
+  # 未绑定期间强制进入旁观者模式（规避受伤与交互），绑定/放行后恢复原模式
+  spectator_lock: true
+  # 从旁观者恢复时的目标模式（玩家原本已是旁观者或异常时的回退值）：SURVIVAL/ADVENTURE/CREATIVE
+  restore_gamemode: SURVIVAL
+  # 是否锁定未绑定玩家的位置（禁止移动与传送）
+  #   true  = 玩家被钉在登录位置，无法移动/传送（当前默认行为）
+  #   false = 玩家可在旁观者模式下自由移动查看，但其余限制（指令/聊天/背包/物品）仍然生效
+  position_lock: true
+  # 未绑定期间只允许输入邀请码指令（/alinvite、/ali、/invite），其余指令全部拦截
+  block_commands: true
+  # 未绑定期间禁止公屏聊天
+  block_chat: true
+  # 未绑定期间禁止打开背包/容器、丢弃物品、使用物品与方块交互
+  block_interaction: true
 
 # 自动老玩家
 # 通过 PlaceholderAPI 检测玩家在线时间，自动授予老玩家 (veteran) 权限
