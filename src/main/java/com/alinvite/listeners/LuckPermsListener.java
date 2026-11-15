@@ -24,18 +24,19 @@ public class LuckPermsListener implements Listener {
         boolean enabled = false;
         try {
             Class<?> luckPermsClass = Class.forName("net.luckperms.api.LuckPerms");
-            Method getApi = luckPermsClass.getMethod("getApi");
-            Object api = getApi.invoke(null);
+            Object api = Class.forName("net.luckperms.api.LuckPermsProvider")
+                .getMethod("get").invoke(null);
             if (api != null) {
                 Class<?> eventBusClass = Class.forName("net.luckperms.api.event.EventBus");
                 Method getEventBus = luckPermsClass.getMethod("getEventBus");
                 Object eventBus = getEventBus.invoke(api);
 
                 Class<?> userUpdateClass = Class.forName("net.luckperms.api.event.user.UserDataRecalculateEvent");
-                Method subscribeMethod = eventBusClass.getMethod("subscribe", Class.class, Class.class);
-
+                Method subscribeMethod = eventBusClass.getMethod("subscribe", Object.class,
+                    Class.class, java.util.function.Consumer.class);
                 LuckPermsEventListener listener = new LuckPermsEventListener(plugin, rewardListener);
-                subscribeMethod.invoke(eventBus, userUpdateClass, listener);
+                java.util.function.Consumer<Object> handler = listener::onUserUpdate;
+                subscribeMethod.invoke(eventBus, plugin, userUpdateClass, handler);
 
                 enabled = true;
                 plugin.getLogger().info("已启用 LuckPerms 实时权限监听");
@@ -76,8 +77,13 @@ public class LuckPermsListener implements Listener {
                     UUID uuid = (UUID) getUniqueId.invoke(user);
                     Player player = Bukkit.getPlayer(uuid);
                     if (player != null) {
-                        plugin.getScheduler().runAtPlayer(player, () ->
-                            rewardListener.checkOnlinePlayerPermissionGroup(player));
+                        plugin.getScheduler().runAtPlayer(player, () -> {
+                            rewardListener.checkOnlinePlayerPermissionGroup(player);
+                            // 组变化立即结算一次配额（旧的规则先结算，再按新规则建立基线）。
+                            if (plugin.getInviteQuotaManager() != null) {
+                                plugin.getInviteQuotaManager().tickPlayer(player);
+                            }
+                        });
                     }
                 }
             } catch (Exception e) {

@@ -38,16 +38,9 @@ public class MilestoneManager {
         return plugin.getScheduler();
     }
 
-    /** 发放前触发可取消的 MilestoneClaimEvent；被取消则跳过奖励（领取资格仍保留）。 */
+    /** The claim transaction has already saved the reward snapshot. Wake its durable delivery. */
     private void grantClaimRewards(Player player, Milestone milestone, int required) {
-        scheduler().runGlobal(() -> {
-            com.alinvite.api.event.MilestoneClaimEvent event =
-                new com.alinvite.api.event.MilestoneClaimEvent(player, required, milestone);
-            Bukkit.getPluginManager().callEvent(event);
-            if (!event.isCancelled()) {
-                rewards().giveRewards(player, milestone.rewards);
-            }
-        });
+        plugin.getDeliveryManager().pump(player.getUniqueId());
     }
 
     public void loadMilestones() {

@@ -66,20 +66,21 @@ binding_gate:
   # 未绑定期间禁止打开背包/容器、丢弃物品、使用物品与方块交互
   block_interaction: true
 
-# 自动老玩家
-# 通过 PlaceholderAPI 检测玩家在线时间，自动授予老玩家 (veteran) 权限
+# 内置累计在线时长：按 UUID 保存到本插件数据库；跨服使用相同 MySQL 和表前缀。
+# 不依赖 PlaceholderAPI、外部计时插件或各子服的 Minecraft 统计文件。
+playtime_tracking:
+  # 在线保存间隔（秒，5–300）。退出立即补存；越短，异常停机可能丢失的尾段越少。
+  save_interval: 30
+  # 正常停服等待最后一次保存的上限（秒，1–30）。
+  shutdown_wait_seconds: 10
+
+# 自动老玩家：使用内置累计在线时长判断，达到门槛后执行授权命令。
 auto_veteran:
   # 是否启用自动老玩家功能（传火规则：在线累计 24 小时）
   enabled: true
-  # 在线时间 PlaceholderAPI 变量（根据你服务器使用的在线时间插件填写）
-  # 常见示例：
-  #   %statistic_hours_played%    - Minecraft 内置统计（默认，返回小时数）
-  #   %playtime_time_amount%      - PlayTime 插件（返回玩家总在线小时数）
-  #   %ontime_playtime%           - OnTime 插件
-  #   %ajlb_playtime_hours%       - AJLB 插件
-  playtime_placeholder: "%statistic_hours_played%"
-  # PAPI 不可用或占位符未解析时，回退到 Bukkit 内置 PLAY_ONE_MINUTE 统计。
-  use_builtin_statistic: true
+  # 兼容保留：下列旧时长来源字段不再读取；自动老玩家与邀请码统一用内置计时。
+  playtime_placeholder: "%alinvite_playtime_hours%"
+  use_builtin_statistic: false
   # 需要达到的在线时长（自动识别单位）
   # 格式: 数字 + 单位后缀
   #   30s  = 30秒（测试用）
@@ -87,11 +88,7 @@ auto_veteran:
   #   10h  = 10小时
   #   纯数字 = 小时
   playtime: "24h"
-  # 数值单位（占位符返回的原始数值单位）：
-  #   hours   - 占位符返回的是小时数（默认）
-  #   minutes - 占位符返回的是分钟数
-  #   seconds - 占位符返回的是秒数
-  #   ticks   - 占位符返回的是游戏刻（20 ticks = 1 秒）
+  # 旧版兼容字段，不再影响内置计时（内置精度为毫秒）。
   value_unit: "hours"
   # 玩家在线时间检查间隔（秒）
   check_interval: 300
@@ -99,22 +96,55 @@ auto_veteran:
   grant_command: "lp user {player} permission set alinvite.veteran true"
   # 通知玩家获得老玩家资格的消息（支持颜色代码 &）
   # 留空则不通知
-  notify_message: "&a恭喜！您的在线时间已达到要求，现在可以生成邀请码邀请新玩家了！"
+  notify_message: "&a你已获得老玩家资格，邀请码按所在组的在线时长规则发放。"
 
 # 绑定成功后登记到原生白名单。
 # 注意：原生白名单在登录前拦截玩家，插件无法让未在白名单中的新人仅凭邀请码首次登录；
 # 请使用代理门禁、临时白名单或预先导入测试账号，绑定成功登记仅对后续连接生效。
 whitelist_on_bind:
   enabled: true
+  # 保持默认命令时直接按玩家后端 UUID 调用原生白名单 API，可安全重试。
+  # 自定义命令使用持久化队列；执行结果不明时需管理员核对，支持 {uuid}。
   command: "whitelist add {player}"
 
-# 邀请资格（可用邀请名额）按累计游玩时长发放。
+# /alinvite add 预邀请：创建时固定截止时间，离线仍计时；历史无期限记录保持原状。
+pre_invites:
+  # 默认 20 个自然小时；0 = 新建记录永不过期。过期退回原预留邀请码。
+  expiry_hours: 20
+  # 后台清理周期（秒，最小 5）；到达截止时间即不能认领，不必等清理。
+  cleanup_interval_seconds: 30
+
+# 绑定礼包、里程碑奖励、白名单的持久化恢复。
+delivery:
+  # 依赖暂不可用、玩家离线或背包不足时保留待办；结果不明则进入 REVIEW。
+  retry_interval_seconds: 15
+
+# 邀请资格（一次性邀请码）按累计游玩时长发放。
+# 每个码只能被一名新玩家成功绑定，用后永久失效；下一次达到节点会拿到新的码。
+# 规则按 LuckPerms 的真实组名匹配（大小写不敏感），priority 越大越优先；
+# 同时继承多个组时取 priority 最高的那条；没有匹配或未安装 LuckPerms 时用 fallback_group。
 invite_quota:
   enabled: true
-  # ONCE：首次达到 hours_per_slot 只发放 1 个名额；RECURRING：每达到一次该时长发放 1 个。
-  grant_mode: "ONCE"
-  hours_per_slot: 24
-  # 可同时持有的名额上限；0 = 不限制。RECURRING 建议保持 0，避免丢失已完成的时长阶段。
+  # 配额检查间隔（秒）。玩家上线、权限组变化时也会立即结算一次。
+  check_interval: 300
+  # 未匹配任何规则时使用的组名。
+  fallback_group: "default"
+  groups:
+    # 普通玩家：累计 48、96、144... 小时各发 1 个码，最多同时持有 1 个。
+    default:
+      mode: "RECURRING"
+      hours_per_slot: 48
+      max_codes: 1
+      priority: 0
+    # 赞助组：累计 24、48、72... 小时各发 1 个码，最多同时持有 2 个。
+    vip1:
+      mode: "RECURRING"
+      hours_per_slot: 24
+      max_codes: 2
+      priority: 10
+  # 旧版兼容字段：新逻辑不再读取，保留以免旧配置的读取路径报错。
+  grant_mode: "RECURRING"
+  hours_per_slot: 48
   max_slots: 0
 
 # 连带处罚：管理员确认被邀请人违规后手动执行 /alinvite admin punish。

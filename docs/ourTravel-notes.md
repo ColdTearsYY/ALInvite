@@ -1,5 +1,7 @@
 # ourTravel「传火邀请制」部署与验收（ALInvite 2.1.0）
 
+> 本文保留为 2.1.0 的历史部署记录。2.2.0 已改用一次性邀请码和内置跨服计时，当前行为以[升级说明](one-time-invite-upgrade.md)及[内置时长说明](builtin-playtime.md)为准；下文的外部时长依赖与旧名额恢复规则不再适用。
+
 ## 1. 目标环境
 
 - 目标服务端：Lophine 26.2 / Folia 调度，Java 25。

@@ -38,9 +38,13 @@ public class PlaceholderHook extends PlaceholderExpansion {
 
     @Override
     public String onPlaceholderRequest(Player player, @NotNull String params) {
+        if (player == null) return "";
         UUID uuid = player.getUniqueId();
 
         switch (params.toLowerCase()) {
+            case "playtime", "playtime_seconds", "playtime_minutes", "playtime_hours" -> {
+                return plugin.getPlaytimeManager().placeholder(uuid, params);
+            }
             case "code" -> {
                 String code = plugin.getCacheManager().getInviteCode(uuid,
                         plugin.getDatabaseManager()::getInviteCodeByPlayerSync);

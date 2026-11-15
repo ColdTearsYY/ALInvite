@@ -54,6 +54,9 @@ public class PlaceholderResolver {
         context.add("contribution", getContributionSync(player.getUniqueId()));
         context.add("unclaimed_rebate", formatAmount(plugin.getDatabaseManager().getUnclaimedRebateSync(player.getUniqueId())));
         context.add("rebate_rate", plugin.getPointsRebateManager().getRebateRateDisplay(player));
+        for (String key : java.util.List.of("playtime", "playtime_seconds", "playtime_minutes", "playtime_hours")) {
+            context.add(key, plugin.getPlaytimeManager().placeholder(player.getUniqueId(), key));
+        }
         customReplacements.forEach(context::add);
         return context;
     }
@@ -89,13 +92,7 @@ public class PlaceholderResolver {
         if (code != null && (code.isEmpty() || "null".equalsIgnoreCase(code))) {
             code = null;
         }
-        Player player = plugin.getServer().getPlayer(uuid);
-        boolean hasPermission = player != null && player.hasPermission(
-            plugin.getConfigManager().getConfig().getString("invite_code.veteran_permission", "alinvite.veteran"));
-        if (!hasPermission) {
-            return "未解锁";
-        }
-        return code != null ? code : "生成中...";
+        return code != null ? code : "暂无可用码";
     }
 
     public String getBindStatusSync(UUID uuid) {

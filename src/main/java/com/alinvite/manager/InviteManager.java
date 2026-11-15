@@ -18,64 +18,42 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InviteManager {
 
     private final ALInvite plugin;
-    private final SecureRandom random = new SecureRandom();
-
-    private final Map<UUID, CompletableFuture<String>> generatingCodes = new ConcurrentHashMap<>();
 
     public InviteManager(ALInvite plugin) {
         this.plugin = plugin;
     }
 
-    /** 确保玩家已有邀请码（无则生成），返回当前邀请码。 */
+    /**
+     * 玩家当前可用的第一个邀请码。**不会现场生成**：没有库存时返回 null，
+     * 库存只由配额水位事务（累计在线时长）或旧数据迁移产生。
+     */
     public CompletableFuture<String> ensureInviteCode(UUID uuid) {
         String cached = plugin.getCacheManager().getInviteCode(uuid);
         if (cached != null && !cached.isEmpty()) {
             return CompletableFuture.completedFuture(cached);
         }
-        return AsyncPool.supply(() -> plugin.getDatabaseManager().getInviteCodeByPlayerSync(uuid))
-            .thenCompose(code -> code != null && !code.isEmpty()
-                ? CompletableFuture.completedFuture(code)
-                : generateInviteCode(uuid));
+        return AsyncPool.supply(() -> {
+            String code = plugin.getDatabaseManager().getAvailableCodeSync(uuid);
+            if (code != null && !code.isEmpty()) {
+                plugin.getCacheManager().setInviteCode(uuid, code);
+            }
+            return code;
+        });
     }
 
+    /** 全部可用邀请码（/alinvite code 展示用）。 */
+    public CompletableFuture<java.util.List<String>> listAvailableCodes(UUID uuid) {
+        return plugin.getDatabaseManager().listAvailableCodes(uuid);
+    }
+
+    /**
+     * 兼容旧调用：返回第一个可用码。没有可发放库存时以异常结束，绝不凭空造码。
+     */
     public CompletableFuture<String> generateInviteCode(UUID uuid) {
-        return generatingCodes.computeIfAbsent(uuid, key ->
-            generateAndPersistCode(key, 0)
-                .whenComplete((ignored, throwable) -> generatingCodes.remove(key)));
-    }
-
-    private CompletableFuture<String> generateAndPersistCode(UUID uuid, int attempt) {
-        if (attempt >= 64) {
-            return CompletableFuture.failedFuture(new IllegalStateException(
-                "生成唯一邀请码失败：连续冲突次数超过限制"));
-        }
-
-        return AsyncPool.supply(this::randomCode)
-            .thenCompose(candidate -> plugin.getDatabaseManager()
-                .tryWriteInviteCode(uuid, candidate)
-                .thenCompose(result -> {
-                    return switch (result.status()) {
-                        case SUCCESS -> {
-                            plugin.getCacheManager().setInviteCode(uuid, result.code());
-                            yield CompletableFuture.completedFuture(result.code());
-                        }
-                        case CODE_CONFLICT -> generateAndPersistCode(uuid, attempt + 1);
-                        case ERROR -> CompletableFuture.failedFuture(new IllegalStateException(
-                            "邀请码写入数据库失败"));
-                    };
-                }));
-    }
-
-    private String randomCode() {
-        int length = plugin.getConfigManager().getConfig().getInt("invite_code.length", 6);
-        String charset = plugin.getConfigManager().getConfig().getString("invite_code.charset", "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789");
-        String prefix = plugin.getConfigManager().getConfig().getString("invite_code.prefix", "");
-
-        StringBuilder sb = new StringBuilder(prefix);
-        for (int i = 0; i < length; i++) {
-            sb.append(charset.charAt(random.nextInt(charset.length())));
-        }
-        return sb.toString();
+        return ensureInviteCode(uuid).thenCompose(code -> code != null && !code.isEmpty()
+            ? CompletableFuture.completedFuture(code)
+            : CompletableFuture.failedFuture(new IllegalStateException(
+                "没有可发放的邀请码库存（需累计在线时长达到发放节点）")));
     }
 
     public CompletableFuture<Boolean> isCodeExists(String code) {
@@ -271,8 +249,11 @@ public class InviteManager {
     private CompletableFuture<BindResult> doBindInviteRecord(UUID playerUuid, String playerIp, String playerName,
                                                                UUID inviterUuid, String inviterIp,
                                                                String trimmedCode, Player player) {
-        return plugin.getDatabaseManager().recordInviteWithQuota(
-                inviterUuid, playerUuid, playerIp, inviterIp, playerName, trimmedCode)
+        CompletableFuture<Void> settled = plugin.getInviteQuotaManager() == null
+            ? CompletableFuture.completedFuture(null)
+            : plugin.getInviteQuotaManager().refreshOnline(inviterUuid);
+        return settled.thenCompose(ignored -> plugin.getDatabaseManager().recordInviteWithQuota(
+                inviterUuid, playerUuid, playerIp, inviterIp, playerName, trimmedCode))
             .thenApply(dbResult -> {
                 switch (dbResult.status) {
                     case SUCCESS -> {
@@ -299,6 +280,10 @@ public class InviteManager {
                         return new BindResult(false, BindResultType.IP_LIMIT,
                             dbResult.remainingSlots, dbResult.nextSlotAt);
                     }
+                    case CODE_NOT_FOUND, CODE_NOT_AVAILABLE -> {
+                        return new BindResult(false, BindResultType.CODE_NOT_FOUND,
+                            dbResult.remainingSlots, dbResult.nextSlotAt);
+                    }
                     default -> {
                         return new BindResult(false, BindResultType.UNKNOWN);
                     }
@@ -309,8 +294,13 @@ public class InviteManager {
     private record PendingClaimSnapshot(UUID uuid, String name, String ip) {}
 
     public CompletableFuture<BindResult> claimPendingInvite(Player player) {
+        return claimPendingInvite(player, () -> true);
+    }
+
+    public CompletableFuture<BindResult> claimPendingInvite(Player player,
+            java.util.function.BooleanSupplier admissionPermit) {
         return plugin.getScheduler().supplyAtPlayer(player, () -> {
-            if (player.getAddress() == null || player.getAddress().getAddress() == null) {
+            if (!player.isOnline() || player.getAddress() == null || player.getAddress().getAddress() == null) {
                 return null;
             }
             return new PendingClaimSnapshot(player.getUniqueId(), player.getName(),
@@ -324,16 +314,31 @@ public class InviteManager {
                 if (pending == null) {
                     return CompletableFuture.completedFuture(null);
                 }
-                return plugin.getDatabaseManager().claimPendingInvite(
-                    pending, snapshot.uuid(), snapshot.ip(), snapshot.name(), normalizedName)
+                CompletableFuture<Void> settled = plugin.getInviteQuotaManager() == null
+                    ? CompletableFuture.completedFuture(null)
+                    : plugin.getInviteQuotaManager().refreshOnline(pending.inviterUuid());
+                return settled.thenCompose(ignored -> plugin.getDatabaseManager().claimPendingInvite(
+                    pending, snapshot.uuid(), snapshot.ip(), snapshot.name(), normalizedName, admissionPermit))
                     .thenApply(dbResult -> {
                         if (dbResult.status == com.alinvite.database.DatabaseManager.InviteRecordStatus.SUCCESS) {
                             completeSuccessfulInvite(player, pending.inviterUuid(), pending.inviterCode(), dbResult);
+                            Player inviter = Bukkit.getPlayer(pending.inviterUuid());
+                            if (inviter != null) plugin.getScheduler().runAtPlayer(inviter, () -> inviter.sendMessage(
+                                plugin.getConfigManager().getMessage("commands.add.claimed", inviter)
+                                    .replace("{player}", snapshot.name())));
                             return new BindResult(true, BindResultType.SUCCESS,
                                 dbResult.remainingSlots, dbResult.nextSlotAt);
                         }
-                        // 认领失败（已被绑定/IP限制/已是老玩家）：释放预邀请，归还名额。
-                        plugin.getDatabaseManager().releasePendingInvite(normalizedName, pending.inviterUuid());
+                        if (dbResult.status == com.alinvite.database.DatabaseManager.InviteRecordStatus.ADMISSION_CLOSED) {
+                            return null; // The reservation remains valid for a later login within its stored TTL.
+                        }
+                        // 只有确定无法认领（已绑定 / IP 限制 / 已是老玩家）才释放预留；
+                        // 数据库临时错误保留预留，稍后重试，避免误退库存。
+                        boolean transientFailure = dbResult.status
+                            == com.alinvite.database.DatabaseManager.InviteRecordStatus.ERROR;
+                        if (!transientFailure) {
+                            plugin.getDatabaseManager().releasePendingInvite(pending);
+                        }
                         return switch (dbResult.status) {
                             case DUPLICATE -> new BindResult(false, BindResultType.ALREADY_USED);
                             case IP_LIMIT -> new BindResult(false, BindResultType.IP_LIMIT);
@@ -351,16 +356,16 @@ public class InviteManager {
         plugin.getCacheManager().invalidateInviteCode(player.getUniqueId());
         plugin.getMilestoneManager().checkMilestones(inviterUuid, dbResult.totalInvites);
         if (plugin.getBindingGateManager() != null) {
-            plugin.getBindingGateManager().unlock(player.getUniqueId());
+            plugin.getBindingGateManager().unlock(player);
         }
 
         plugin.getScheduler().runGlobal(() -> {
             com.alinvite.api.ALInviteAPI.fireInviteSuccess(inviterUuid, player.getUniqueId());
             Bukkit.getPluginManager().callEvent(
                 new com.alinvite.api.event.InviteBindEvent(player, inviterUuid, inviteCode));
-            registerWhitelist(player.getName());
         });
-        plugin.getGiftManager().giveGiftRewards(player, inviterUuid);
+        plugin.getDeliveryManager().pump(player.getUniqueId());
+        plugin.getDeliveryManager().pump(inviterUuid);
         plugin.getScheduler().runAtPlayer(player, () -> {
             String path = dbResult.milestoneEnabled && dbResult.rebateEnabled && dbResult.giftEnabled
                 ? "function_restrictions.bind_success_full"
@@ -381,18 +386,5 @@ public class InviteManager {
         });
     }
 
-    private void registerWhitelist(String playerName) {
-        if (!plugin.getConfigManager().getConfig().getBoolean("whitelist_on_bind.enabled", true)) {
-            return;
-        }
-        String command = plugin.getConfigManager().getConfig()
-            .getString("whitelist_on_bind.command", "whitelist add {player}")
-            .replace("{player}", playerName);
-        try {
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-        } catch (Exception e) {
-            plugin.getLogger().warning("绑定后白名单登记失败: " + e.getMessage());
-        }
-    }
 
 }

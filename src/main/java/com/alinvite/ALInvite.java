@@ -13,6 +13,8 @@ import com.alinvite.manager.BindingGateManager;
 import com.alinvite.manager.CacheManager;
 import com.alinvite.manager.GiftManager;
 import com.alinvite.manager.InviteManager;
+import com.alinvite.manager.InviteQuotaManager;
+import com.alinvite.manager.PlaytimeManager;
 import com.alinvite.manager.LeaderboardManager;
 import com.alinvite.manager.MilestoneManager;
 import com.alinvite.manager.PointsRebateManager;
@@ -44,6 +46,9 @@ public class ALInvite extends JavaPlugin {
     private PointsRebateManager pointsRebateManager;
     private LeaderboardManager leaderboardManager;
     private AutoVeteranManager autoVeteranManager;
+    private InviteQuotaManager inviteQuotaManager;
+    private PlaytimeManager playtimeManager;
+    private com.alinvite.manager.DeliveryManager deliveryManager;
     private BindingGateManager bindingGateManager;
     private RedisManager redisManager;
     private CrossServerSync crossServerSync;
@@ -114,6 +119,7 @@ public class ALInvite extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (deliveryManager != null) deliveryManager.shutdown();
         // 1. 回收所有调度任务（定时器/延迟动作），防止停服后残留任务操作失效的 Inventory
         if (scheduler != null) {
             scheduler.cancelAll();
@@ -129,8 +135,15 @@ public class ALInvite extends JavaPlugin {
         if (autoVeteranManager != null) {
             autoVeteranManager.shutdown();
         }
+        if (inviteQuotaManager != null) {
+            inviteQuotaManager.shutdown();
+        }
         if (bindingGateManager != null) {
             bindingGateManager.shutdown();
+        }
+        if (playtimeManager != null) {
+            playtimeManager.shutdown();
+            playtimeManager = null;
         }
         // 4. 关闭 Redis 与 IO 线程池、数据库
         if (redisManager != null) {
@@ -221,6 +234,7 @@ public class ALInvite extends JavaPlugin {
     }
 
     private void initManagers() {
+        if (deliveryManager != null) deliveryManager.shutdown();
         // 重建前先取消旧调度任务，防止 reload 后旧任务继续访问已替换的 GUI/数据库对象。
         if (scheduler != null) {
             scheduler.cancelAll();
@@ -231,6 +245,9 @@ public class ALInvite extends JavaPlugin {
         if (autoVeteranManager != null) {
             autoVeteranManager.shutdown();
         }
+        if (inviteQuotaManager != null) {
+            inviteQuotaManager.shutdown();
+        }
         if (bindingGateManager != null) {
             bindingGateManager.shutdown();
         }
@@ -240,12 +257,18 @@ public class ALInvite extends JavaPlugin {
         inviteManager = new InviteManager(this);
         milestoneManager = new MilestoneManager(this);
         giftManager = new GiftManager(this);
+        deliveryManager = new com.alinvite.manager.DeliveryManager(this);
+        deliveryManager.start();
         menuManager = new MenuManager(this);
         pointsRebateManager = new PointsRebateManager(this);
         leaderboardManager = new LeaderboardManager(this);
+        if (playtimeManager == null) playtimeManager = new PlaytimeManager(this);
+        playtimeManager.start();
         autoVeteranManager = new AutoVeteranManager(this);
         bindingGateManager = new BindingGateManager(this);
         crossServerSync = new CrossServerSync(this);
+        inviteQuotaManager = new InviteQuotaManager(this);
+        inviteQuotaManager.start();
         // 写穿透：所有数据库变更立即失效本机缓存并广播集群（ALFriends 同款，零延迟）
         databaseManager.setDataChangeListener(crossServerSync::onDataChanged);
         initRedis();
@@ -275,6 +298,10 @@ public class ALInvite extends JavaPlugin {
     }
 
     private void initListeners() {
+        if (org.bukkit.event.HandlerList.getRegisteredListeners(this).stream()
+                .noneMatch(listener -> listener.getListener() == playtimeManager)) {
+            Bukkit.getPluginManager().registerEvents(playtimeManager, this);
+        }
         permissionGroupRewardListener = new PermissionGroupRewardListener(this);
         Bukkit.getPluginManager().registerEvents(new InviteListener(this), this);
         Bukkit.getPluginManager().registerEvents(bindingGateManager, this);
@@ -317,7 +344,9 @@ public class ALInvite extends JavaPlugin {
                 scheduler.cancel(permissionGroupCheckTaskId);
                 permissionGroupCheckTaskId = -1;
             }
-            org.bukkit.event.HandlerList.unregisterAll((org.bukkit.plugin.Plugin) this);
+            // Folia can deliver quit/join from another region during reload. Keep time tracking live.
+            com.alinvite.utils.ListenerRegistration.unregisterExcept(this, playtimeManager);
+            if (deliveryManager != null) deliveryManager.shutdown();
             databaseManager.close();
             configManager.loadAll();
             initDatabase();
@@ -387,6 +416,13 @@ public class ALInvite extends JavaPlugin {
     public AutoVeteranManager getAutoVeteranManager() {
         return autoVeteranManager;
     }
+
+    public InviteQuotaManager getInviteQuotaManager() {
+        return inviteQuotaManager;
+    }
+
+    public PlaytimeManager getPlaytimeManager() { return playtimeManager; }
+    public com.alinvite.manager.DeliveryManager getDeliveryManager() { return deliveryManager; }
 
     /** 兼容旧调用（InviteListener 等）：礼包过期检查。 */
     public java.util.concurrent.CompletableFuture<Boolean> checkGiftExpiration(Player player) {

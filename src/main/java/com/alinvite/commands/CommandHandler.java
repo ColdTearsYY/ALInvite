@@ -23,13 +23,16 @@ import java.util.stream.Collectors;
 public class CommandHandler implements CommandExecutor, TabCompleter {
 
     private final ALInvite plugin;
+    private final OperationsCommand operations;
 
     public CommandHandler(ALInvite plugin) {
         this.plugin = plugin;
+        this.operations = new OperationsCommand(plugin);
     }
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+        if (operations.handle(sender, args)) return true;
         if (args.length == 0) {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage(plugin.getConfigManager().getMessage("errors.player_only"));
@@ -46,6 +49,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             case "bind" -> handleBind(sender, args);
             case "add" -> handleAdd(sender, args);
             case "stats" -> handleStats(sender);
+            case "time", "playtime" -> handlePlaytime(sender);
             case "contrib" -> handleContribution(sender);
             case "buygift" -> handleBuyGift(sender);
             case "help" -> handleHelp(sender);
@@ -69,24 +73,44 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             return;
         }
 
-        // 检查玩家是否有老玩家权限
-        String veteranPermission = plugin.getConfigManager().getConfig()
-            .getString("invite_code.veteran_permission", "alinvite.veteran");
-        
-        if (!player.hasPermission(veteranPermission)) {
-            player.sendMessage(plugin.getConfigManager().getMessage("errors.no_invite_code"));
+
+        // 只列出账本中已有的可用码；查询本身绝不发放资格，也不会现场生成。
+        plugin.getInviteManager().listAvailableCodes(player.getUniqueId()).thenAccept(codes ->
+            plugin.getScheduler().runAtPlayer(player, () -> {
+                if (codes == null || codes.isEmpty()) {
+                    player.sendMessage(plugin.getConfigManager().getMessage("errors.no_invite_code"));
+                    return;
+                }
+                if (codes.size() == 1) {
+                    player.sendMessage(plugin.getConfigManager().getMessage("commands.code", player)
+                        .replace("{invite_code}", codes.get(0)));
+                    return;
+                }
+                String joined = ConfigManager.colorize(String.join("&7, &e", codes));
+                player.sendMessage(plugin.getConfigManager().getMessage("commands.code_list", player)
+                    .replace("{count}", String.valueOf(codes.size()))
+                    .replace("{invite_codes}", joined));
+            })).exceptionally(throwable -> {
+                plugin.getLogger().warning("查询邀请码失败: " + throwable.getMessage());
+                return null;
+            });
+    }
+
+    private void handlePlaytime(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(plugin.getConfigManager().getMessage("errors.player_only"));
             return;
         }
-
-        plugin.getInviteManager().getInviteCode(player.getUniqueId()).thenCompose(code -> {
-            if (code == null) {
-                return plugin.getInviteManager().generateInviteCode(player.getUniqueId());
-            }
-            return CompletableFuture.completedFuture(code);
-        }).thenAccept(code -> plugin.getScheduler().runAtPlayer(player, () -> {
-            String message = plugin.getConfigManager().getMessage("commands.code", player).replace("{invite_code}", code);
-            player.sendMessage(message);
-        }));
+        plugin.getPlaytimeManager().refresh(player.getUniqueId()).thenAccept(millis ->
+            plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(
+                plugin.getConfigManager().getMessage("commands.playtime", player)
+                    .replace("{time}", com.alinvite.manager.PlaytimeManager.format(millis))
+                    .replace("{seconds}", Long.toString(millis / 1000L)))))
+            .exceptionally(error -> {
+                plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(
+                    plugin.getConfigManager().getMessage("commands.playtime_unavailable", player)));
+                return null;
+            });
     }
 
     private void handleBind(CommandSender sender, String[] args) {
@@ -138,9 +162,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.getConfigManager().getMessage("errors.player_only"));
             return;
         }
-        String veteranPermission = plugin.getConfigManager().getConfig()
-            .getString("invite_code.veteran_permission", "alinvite.veteran");
-        if (!player.hasPermission("alinvite.use") || !player.hasPermission(veteranPermission)) {
+        if (!player.hasPermission("alinvite.use") || plugin.getBindingGateManager().isLocked(player.getUniqueId())) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.no_permission", player));
             return;
         }
@@ -157,7 +179,8 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.self", player));
             return;
         }
-        if (Bukkit.getPlayerExact(targetName) != null) {
+        Player onlineTarget = Bukkit.getPlayerExact(targetName);
+        if (onlineTarget != null && !plugin.getBindingGateManager().canAcceptLiveInvite(onlineTarget.getUniqueId())) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player));
             return;
         }
@@ -169,7 +192,11 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             return;
         }
 
-        plugin.getDatabaseManager().findBoundPlayerByName(normalizedName).thenCompose(boundUuid -> {
+        CompletableFuture<Void> settled = plugin.getInviteQuotaManager() == null
+            ? CompletableFuture.completedFuture(null)
+            : plugin.getInviteQuotaManager().refreshPlayer(player);
+        settled.thenCompose(ignored -> plugin.getDatabaseManager().findBoundPlayerByName(normalizedName))
+            .thenCompose(boundUuid -> {
             if (boundUuid != null) {
                 plugin.getScheduler().runAtPlayer(player, () ->
                     player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player)));
@@ -178,6 +205,13 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             return plugin.getInviteManager().ensureInviteCode(player.getUniqueId())
                 .thenCompose(code -> plugin.getDatabaseManager().reserveInviteForName(
                     player.getUniqueId(), inviterIp, normalizedName, targetName))
+                .thenApply(result -> {
+                    if (result.success()) {
+                        Player target = Bukkit.getPlayerExact(targetName);
+                        if (target != null) plugin.getBindingGateManager().requestPendingInviteCheck(target);
+                    }
+                    return result;
+                })
                 .thenAccept(result -> plugin.getScheduler().runAtPlayer(player, () -> {
                     String path = switch (result.status()) {
                         case SUCCESS -> "commands.add.success";
@@ -191,6 +225,11 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                         .replace("{remaining}", String.valueOf(result.remainingSlots()));
                     player.sendMessage(message);
                 }));
+        }).exceptionally(error -> {
+            plugin.getLogger().warning("预邀请结算失败，保留库存: " + error.getMessage());
+            plugin.getScheduler().runAtPlayer(player, () ->
+                player.sendMessage(plugin.getConfigManager().getMessage("commands.add.failed", player)));
+            return null;
         });
     }
 
@@ -321,10 +360,17 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     sender.sendMessage("玩家不存在或不在线");
                     return;
                 }
-                plugin.getInviteManager().generateInviteCode(target.getUniqueId()).thenAccept(code -> {
+                // 管理员也不能凭空造码：只展示该玩家已发放的库存。
+                plugin.getInviteManager().listAvailableCodes(target.getUniqueId()).thenAccept(codes -> {
+                    if (codes == null || codes.isEmpty()) {
+                        sender.sendMessage(plugin.getConfigManager()
+                            .getMessage("commands.admin.givecode_empty")
+                            .replace("{player}", target.getName()));
+                        return;
+                    }
                     String message = plugin.getConfigManager().getMessage("commands.admin.givecode_success")
                         .replace("{player}", target.getName())
-                        .replace("{invite_code}", code);
+                        .replace("{invite_code}", String.join(", ", codes));
                     sender.sendMessage(message);
                 });
             }
@@ -773,13 +819,25 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         List<String> completions = new ArrayList<>();
 
         if (args.length == 1) {
-            completions.addAll(Arrays.asList("code", "generate", "stats", "contrib", "buygift", "help", "admin", "givedj", "bind", "add"));
+            completions.addAll(Arrays.asList("code", "generate", "stats", "time", "playtime", "status", "pending", "cancel", "deliveries", "contrib", "buygift", "help", "givedj", "bind", "add"));
+            if (sender.hasPermission("alinvite.admin")) completions.add("admin");
             return filterByInput(completions, args[0]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "punish", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed", "open", "close"));
+            if (!sender.hasPermission("alinvite.admin")) return completions;
+            completions.addAll(Arrays.asList("reload", "givecode", "clearcode", "addinvite", "reset", "punish", "announce", "checkgroup", "contrib", "papi", "rebate", "unclaimed", "open", "close", "status", "pending", "cancel", "deliveries", "delivery"));
             return filterByInput(completions, args[1]);
+        }
+
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("delivery")) {
+            return sender.hasPermission("alinvite.admin")
+                ? filterByInput(Arrays.asList("show", "retry", "done"), args[2]) : completions;
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin")
+                && Arrays.asList("status", "pending", "deliveries").contains(args[1].toLowerCase(java.util.Locale.ROOT))) {
+            return sender.hasPermission("alinvite.admin")
+                ? filterByInput(Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()), args[2]) : completions;
         }
 
         if (args.length == 3 && args[1].equalsIgnoreCase("givecode")) {

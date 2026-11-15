@@ -29,9 +29,9 @@ public final class BindingGateManager implements Listener {
 
     private static final Set<String> ALLOWED_COMMAND_ROOTS = Set.of("alinvite", "ali", "invite");
 
-    private record Session(Location anchor, long deadlineMillis, long nextReminderMillis) {
+    private record Session(Player player, Location anchor, long deadlineMillis, long nextReminderMillis, GateClaimSession claim) {
         Session withNextReminder(long nextReminder) {
-            return new Session(anchor, deadlineMillis, nextReminder);
+            return new Session(player, anchor, deadlineMillis, nextReminder, claim);
         }
     }
 
@@ -94,10 +94,11 @@ public final class BindingGateManager implements Listener {
         int reminderSeconds = Math.max(1, plugin.getConfigManager().getConfig()
             .getInt("binding_gate.reminder_interval_seconds", 10));
         long now = System.currentTimeMillis();
-        sessions.put(player.getUniqueId(), new Session(
-            player.getLocation().clone(),
+        Session previous = sessions.put(player.getUniqueId(), new Session(
+            player, player.getLocation().clone(),
             now + graceSeconds * 1000L,
-            now + reminderSeconds * 1000L));
+            now + reminderSeconds * 1000L, new GateClaimSession(now + graceSeconds * 1000L)));
+        if (previous != null) previous.claim().close();
         if (notify) {
             prompt(player);
         }
@@ -105,8 +106,12 @@ public final class BindingGateManager implements Listener {
 
     /** Prompts the player and forces spectator mode so damage/interaction cannot occur. */
     public void enforceLock(Player player) {
+        Session session = sessions.get(player.getUniqueId());
+        if (session == null || session.player() != player) return;
+        session.claim().ready();
         prompt(player);
         enforceSpectator(player);
+        requestPendingInviteCheck(player);
     }
 
     private void enforceSpectator(Player player) {
@@ -132,14 +137,35 @@ public final class BindingGateManager implements Listener {
     }
 
     public void unlock(UUID uuid) {
-        sessions.remove(uuid);
+        Session removed = sessions.remove(uuid);
+        if (removed != null) removed.claim().close();
+        restoreMode(uuid);
+    }
+
+    /** An old login's completion must never remove a replacement login's gate. */
+    public void unlock(Player player) {
+        UUID uuid = player.getUniqueId();
+        Session session;
+        while ((session = sessions.get(uuid)) != null && session.player() == player) {
+            if (sessions.remove(uuid, session)) {
+                session.claim().close();
+                restoreMode(uuid);
+                return;
+            }
+        }
+    }
+    private void restoreMode(UUID uuid) {
         GameMode restore = restoreModes.remove(uuid);
         if (restore == null) {
             return;
         }
         Player player = plugin.getServer().getPlayer(uuid);
-        if (player != null && player.isOnline() && player.getGameMode() == GameMode.SPECTATOR) {
-            plugin.getScheduler().runAtPlayer(player, () -> player.setGameMode(restore));
+        if (player != null) {
+            plugin.getScheduler().runAtPlayer(player, () -> {
+                if (player.isOnline() && !isLocked(uuid) && player.getGameMode() == GameMode.SPECTATOR) {
+                    player.setGameMode(restore);
+                }
+            });
         }
     }
 
@@ -147,7 +173,52 @@ public final class BindingGateManager implements Listener {
         return sessions.containsKey(uuid);
     }
 
+    /** Thread-safe local lookup; no foreign player's state or permissions are read. */
+    public boolean canAcceptLiveInvite(UUID uuid) {
+        Session session = sessions.get(uuid);
+        return session != null && session.claim().accepts(System.currentTimeMillis());
+    }
+
+    public boolean isCurrentAdmission(Player player) {
+        if (!isEnabled()) return true;
+        Session session = sessions.get(player.getUniqueId());
+        return session != null && session.player() == player && session.claim().accepts(System.currentTimeMillis());
+    }
+
+    public java.util.concurrent.CompletableFuture<InviteManager.BindResult> claimInitialPendingInvite(Player player) {
+        if (!isEnabled()) return plugin.getInviteManager().claimPendingInvite(player);
+        return checkPendingInvite(player, true);
+    }
+
+    /** Same-server /add wakes this immediately; the one-second gate tick covers other backends. */
+    public void requestPendingInviteCheck(Player player) { checkPendingInvite(player, false); }
+
+    private java.util.concurrent.CompletableFuture<InviteManager.BindResult> checkPendingInvite(Player player, boolean initial) {
+        UUID uuid = player.getUniqueId();
+        Session session = sessions.get(uuid);
+        if (session == null || session.player() != player) return java.util.concurrent.CompletableFuture.completedFuture(null);
+        GateClaimSession claim = session.claim();
+        long now = System.currentTimeMillis();
+        long token = initial ? claim.beginInitialLookup(now) : claim.beginLookup(now);
+        if (token == 0) return java.util.concurrent.CompletableFuture.completedFuture(null);
+        return plugin.getInviteManager().claimPendingInvite(player, () -> {
+            Session live = sessions.get(uuid);
+            return live != null && live.claim() == claim && claim.claim(token, System.currentTimeMillis());
+        }).whenComplete((result, error) -> {
+            claim.finish(token);
+            if (error != null) {
+                Session live = sessions.get(uuid);
+                if (live != null && live.claim() == claim) plugin.getLogger().warning(
+                    "宽限期预邀请认领未完成，保留记录 (" + uuid + "): " + error.getMessage());
+            } else if (result != null && result.success) {
+                plugin.getScheduler().runAtPlayer(player, () -> player.sendMessage(
+                    plugin.getConfigManager().getMessage("commands.add.auto_bound", player)));
+            }
+        });
+    }
+
     public void shutdown() {
+        sessions.values().forEach(session -> session.claim().close());
         sessions.clear();
         restoreModes.clear();
         if (taskId != -1) {
@@ -164,20 +235,24 @@ public final class BindingGateManager implements Listener {
             UUID uuid = entry.getKey();
             Session session = entry.getValue();
             Player player = plugin.getServer().getPlayer(uuid);
-            if (player == null || !player.isOnline()) {
+            if (player == null || player != session.player()) {
+                session.claim().close();
                 sessions.remove(uuid, session);
                 restoreModes.remove(uuid);
                 continue;
             }
-            if (now >= session.deadlineMillis()) {
-                if (sessions.remove(uuid, session)) {
-                    plugin.getScheduler().runAtPlayer(player, () ->
+            if (session.claim().expire(now)) {
+                plugin.getScheduler().runAtPlayer(player, () -> {
+                    Session live = sessions.get(uuid);
+                    if (live != null && live.claim() == session.claim() && sessions.remove(uuid, live)) {
                         player.kickPlayer(ConfigManager.colorize(messageRaw(
                             "binding_gate.kick_message",
-                            "&c请输入邀请码~ /alinvite bind [邀请码]"))));
-                }
+                            "&c请输入邀请码~ /alinvite bind [邀请码]")));
+                    }
+                });
                 continue;
             }
+            requestPendingInviteCheck(player);
             if (now >= session.nextReminderMillis()) {
                 Session updated = session.withNextReminder(now + reminderSeconds * 1000L);
                 if (sessions.replace(uuid, session, updated)) {
@@ -222,11 +297,14 @@ public final class BindingGateManager implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
+        Session current = sessions.get(uuid);
+        if (current != null && current.player() != player) return;
         GameMode restore = restoreModes.remove(uuid);
         if (restore != null && player.getGameMode() == GameMode.SPECTATOR) {
             player.setGameMode(restore);
         }
-        sessions.remove(uuid);
+        Session removed = sessions.remove(uuid);
+        if (removed != null) removed.claim().close();
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)

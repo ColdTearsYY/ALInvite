@@ -35,3 +35,12 @@ permissions:
   alinvite.admin:
     description: 管理员权限
     default: op
+  alinvite.status:
+    description: 查看自己的邀请额度状态
+    default: true
+  alinvite.pending:
+    description: 查看和取消自己的预邀请
+    default: true
+  alinvite.delivery:
+    description: 查看绑定后持久化工作
+    default: true
