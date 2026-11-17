@@ -4,7 +4,7 @@
 
 **ALInvite** 是一个功能强大的我的世界服务器邀请系统插件，旨在通过激励玩家邀请新玩家加入服务器，促进服务器人口增长和社区活跃度。插件支持多语言、自定义菜单、礼包商店、里程碑奖励等丰富功能，完全兼容 Folia 多线程服务器。
 
-当前版本：[v2.2.0 下载](https://github.com/ColdTearsYY/ALInvite/releases/tag/v2.2.0)。支持用 `/alinvite add <新人名>` 替宽限期内的在线新人完成绑定；同服和共享 MySQL 的跨服场景均已隔离验证。见[使用说明](docs/live-add.md)、[更新记录](CHANGELOG.md)和[最终验证记录](docs/live-add-validation.md)。
+当前版本：[v2.2.1 下载](https://github.com/ColdTearsYY/ALInvite/releases/tag/v2.2.1)。修复离线邀请人无法按 LuckPerms 权限计算返点的问题；在线读取权限切回玩家实体线程，离线按实际 UUID 异步加载权限。比例沿用服主配置，见[离线返点说明](docs/offline-rebate.md)和[更新记录](CHANGELOG.md)。2.2.0 的宽限期在线邀请继续保留，见[使用说明](docs/live-add.md)和[验证记录](docs/live-add-validation.md)。
 
 ### ✨ 主要特性
 

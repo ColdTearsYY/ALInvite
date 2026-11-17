@@ -429,9 +429,13 @@ CompletableFuture<String> ALInviteAPI.getGiftStatus(UUID uuid);
 CompletableFuture<String> ALInviteAPI.getNextMilestone(UUID uuid);
 CompletableFuture<String> ALInviteAPI.getNextMilestoneName(UUID uuid);
 
-// 玩家当前充值返点比例（0.15 = 15%）
-// 负值 = 点券模式（玩家可自行领取）；正值 = 现金模式（管理员核销后线下发放）
+// 在线玩家当前充值返点比例（0.16 = 16%），在玩家所属实体线程调用。
+// 比例与 points/cash 模式分别处理；无权限时使用配置的 base.rate。
 double ALInviteAPI.getRebateRate(Player player);
+
+// 2.2.1：后台结算/离线查询使用实际 UUID 异步解析，勿在实体线程 join/get。
+// 在线切实体线程读权限；离线通过 LuckPerms 查询有效权限与静态上下文。
+CompletableFuture<Double> ALInviteAPI.resolveRebateRate(UUID uuid);
 
 // 管理员核销未领取返点（线下发放现金后执行），返回核销金额
 double ALInvite.clearUnclaimedRebateSync(UUID uuid);

@@ -337,11 +337,16 @@ public final class ALInviteAPI {
 
     /**
      * 获取玩家当前充值返点比例（如 0.15 表示 15%）。
-     * 返回负值表示贡献模式（只记录不即时发放点券），绝对值为比例。
-     * 无匹配权限组时返回基础比例。
+     * 在玩家所属实体线程调用；无匹配权限时返回基础比例。
+     * 后台结算或离线查询请使用 resolveRebateRate(UUID)。
      */
     public static double getRebateRate(Player player) {
         return plugin.getPointsRebateManager().getRebateRate(player);
+    }
+
+    /** 按实际 UUID 异步解析返点比例，支持离线 LuckPerms 用户，不阻塞实体线程。 */
+    public static CompletableFuture<Double> resolveRebateRate(UUID uuid) {
+        return plugin.getPointsRebateManager().resolveRebateRate(uuid);
     }
 
     /** 返点比例的展示文本（如 "15%" / "20%（贡献模式）"）。 */

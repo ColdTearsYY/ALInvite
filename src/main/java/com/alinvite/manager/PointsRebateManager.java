@@ -3,14 +3,11 @@ package com.alinvite.manager;
 import com.alinvite.ALInvite;
 import com.alinvite.database.DatabaseManager;
 import com.alinvite.utils.AsyncPool;
+import com.alinvite.utils.LuckPermsRebateLookup;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -24,8 +21,6 @@ public class PointsRebateManager {
     private final ALInvite plugin;
     private final DatabaseManager database;
 
-    /** 缓存的返点权重表（reload 时失效重建）。 */
-    private volatile List<String> sortedGroups;
 
     public PointsRebateManager(ALInvite plugin) {
         this.plugin = plugin;
@@ -163,9 +158,8 @@ public class PointsRebateManager {
                             plugin.getLogger().info("邀请人返点功能被禁用，跳过返点: " + inviterUuid);
                             return CompletableFuture.completedFuture(true);
                         }
-                        Player inviter = Bukkit.getPlayer(inviterUuid);
                         boolean pointsMode = isPointsMode();
-                        double rate = getRebateRate(inviter);
+                        return resolveRebateRate(inviterUuid).thenCompose(rate -> {
                         double rebateAmount = amount * rate;
                         if (rebateAmount <= 0) {
                             return CompletableFuture.completedFuture(true);
@@ -188,6 +182,7 @@ public class PointsRebateManager {
                                                 new java.util.concurrent.CompletableFuture<>();
                                         plugin.getScheduler().runGlobal(() -> {
                                             try {
+                                                Player inviter = Bukkit.getPlayer(inviterUuid);
                                                 com.alinvite.api.event.RebateGrantEvent event =
                                                     new com.alinvite.api.event.RebateGrantEvent(
                                                         inviter, targetPlayer, amount, rebateAmount, pointsMode);
@@ -219,40 +214,33 @@ public class PointsRebateManager {
                                         });
                                     });
                             });
+                        });
                     });
             });
     }
 
-    /**
-     * 返点比例：按配置权重从高到低检查权限组，恒为正值。
-     * 到账方式（点券/现金）由全局 mode 决定，与比例无关。
-     */
+    /** Online display/API: caller must own the player's entity thread. */
     public double getRebateRate(Player player) {
-        if (player == null) {
-            return getDefaultRate();
-        }
-        String permissionPrefix = plugin.getConfigManager().getConfig()
-            .getString("points_rebate.permission_prefix", "alinvite.rebate");
+        RebateRatePolicy policy = RebateRatePolicy.from(plugin.getConfigManager().getConfig());
+        return player == null ? policy.baseRate() : policy.select(player::hasPermission);
+    }
 
-        for (String group : getSortedGroups()) {
-            String permission = permissionPrefix + "." + group;
-            if (player.hasPermission(permission)) {
-                double rate = plugin.getConfigManager().getConfig()
-                    .getDouble("points_rebate.rebate_rates." + group + ".rate", 0.10);
-                if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
-                    plugin.getLogger().info("玩家 " + player.getName() + " 命中返点权限组 " + group
-                        + "，比例: " + (rate * 100) + "%");
-                }
-                return rate;
+    /** Settlement uses UUID; a player absent from this backend is resolved from LuckPerms storage. */
+    public CompletableFuture<Double> resolveRebateRate(UUID inviterUuid) {
+        RebateRatePolicy policy = RebateRatePolicy.from(plugin.getConfigManager().getConfig());
+        return RebateRateResolver.resolve(inviterUuid, policy, uuid -> {
+            Player online = Bukkit.getPlayer(uuid);
+            if (online == null) return CompletableFuture.completedFuture(null);
+            return plugin.getScheduler().supplyAtPlayer(online,
+                () -> online.isOnline() ? policy.select(online::hasPermission) : null);
+        }, uuid -> {
+            if (!Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) {
+                return CompletableFuture.failedFuture(new IllegalStateException("未启用 LuckPerms，无法查询离线返点权限"));
             }
-        }
-
-        double baseRate = plugin.getConfigManager().getConfig()
-            .getDouble("points_rebate.rebate_rates.base.rate", 0.05);
-        if (plugin.getConfigManager().getConfig().getBoolean("debug", false)) {
-            plugin.getLogger().info("玩家 " + player.getName() + " 使用基础返点比例: " + (baseRate * 100) + "%");
-        }
-        return baseRate;
+            return AsyncPool.supply(() -> LuckPermsRebateLookup.rate(uuid, policy))
+                .thenCompose(future -> future).orTimeout(10, java.util.concurrent.TimeUnit.SECONDS);
+        }, error -> plugin.getLogger().warning("无法读取邀请人 " + inviterUuid
+            + " 的返点权限，本次使用基础比例 " + policy.baseRate() + ": " + error.getMessage()));
     }
 
     /** 返利模式是否为点券模式（true = 玩家可自行领取；false = 现金模式，管理员核销后线下发放）。 */
@@ -264,22 +252,6 @@ public class PointsRebateManager {
         return mode.equals("points");
     }
 
-    private List<String> getSortedGroups() {
-        List<String> cached = sortedGroups;
-        if (cached != null) {
-            return cached;
-        }
-        String[] groups = {"contribution", "admin", "mvip", "svip", "vip", "default"};
-        Map<String, Integer> weights = new HashMap<>();
-        for (String group : groups) {
-            weights.put(group, plugin.getConfigManager().getConfig()
-                .getInt("points_rebate.rebate_rates." + group + ".weight", 1));
-        }
-        List<String> sorted = new java.util.ArrayList<>(Arrays.asList(groups));
-        sorted.sort((a, b) -> Integer.compare(weights.get(b), weights.get(a)));
-        sortedGroups = sorted;
-        return sorted;
-    }
 
     private CompletableFuture<Boolean> exceedsDailyLimit(UUID playerUuid, double newRebate) {
         double dailyLimit = plugin.getConfigManager().getConfig()
@@ -409,8 +381,4 @@ public class PointsRebateManager {
         return player != null ? player.getUniqueId() : null;
     }
 
-    private double getDefaultRate() {
-        return plugin.getConfigManager().getConfig()
-            .getDouble("points_rebate.rebate_rates.default.rate", 0.10);
-    }
 }
