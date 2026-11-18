@@ -59,6 +59,9 @@ public class MenuActionRegistry {
         register("open_veteran", (player, value) -> plugin.getMenuManager().openVeteranMenu(player));
         register("open_shop", (player, value) -> plugin.getMenuManager().openShopMenu(player));
         register("open_rebate_history", (player, value) -> plugin.getMenuManager().openRebateHistoryMenu(player));
+        register("open_codes", (player, value) -> plugin.getMenuManager().openInviteCodesMenu(player));
+        register("share_code", (player, value) -> plugin.getMenuManager().shareInviteCode(player, value));
+        register("refresh_codes", (player, value) -> plugin.getMenuManager().refreshInviteCodesMenu(player));
         register("back_veteran", (player, value) -> plugin.getMenuManager().openVeteranMenu(player));
         // back = 按固定层级返回上一级（主菜单 → 邀请中心 → 礼包商店）
         register("back", (player, value) -> {

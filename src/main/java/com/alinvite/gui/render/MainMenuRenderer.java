@@ -8,11 +8,9 @@ import com.alinvite.gui.MenuNames;
 import com.alinvite.scheduler.ALInviteScheduler;
 import org.bukkit.entity.Player;
 
-import java.util.concurrent.CompletableFuture;
-
 /**
  * 主菜单：无动态列表区，仅静态按钮（占位符随基础上下文渲染）。
- * 保留旧行为：有老玩家权限且尚无邀请码的玩家打开菜单时自动生成邀请码。
+ * 邀请码展示使用与列表一致的只读库存快照。
  */
 public class MainMenuRenderer extends BaseMenuRenderer<RenderContext> {
 
@@ -24,24 +22,6 @@ public class MainMenuRenderer extends BaseMenuRenderer<RenderContext> {
     @Override
     protected String menuName() {
         return MenuNames.MAIN;
-    }
-
-    @Override
-    public void open(Player player) {
-        String veteranPermission = plugin.getConfigManager().getConfig()
-            .getString("invite_code.veteran_permission", "alinvite.veteran");
-        boolean veteran = player.hasPermission(veteranPermission);
-
-        CompletableFuture<Void> ready = veteran
-            ? plugin.getInviteManager().ensureInviteCode(player.getUniqueId()).thenAccept(code -> { })
-            : CompletableFuture.completedFuture(null);
-
-        ready.thenRun(() -> super.open(player))
-            .exceptionally(throwable -> {
-                plugin.getLogger().warning("准备主菜单数据失败: " + throwable.getMessage());
-                super.open(player);
-                return null;
-            });
     }
 
     @Override

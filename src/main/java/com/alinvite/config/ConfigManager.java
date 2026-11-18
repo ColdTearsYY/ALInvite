@@ -1,6 +1,7 @@
 package com.alinvite.config;
 
 import com.alinvite.ALInvite;
+import com.alinvite.commands.CommandPresentation;
 import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -456,7 +457,7 @@ public class ConfigManager {
         if (text.isEmpty()) {
             return text;
         }
-        String converted = convertAmpCodes(text);
+        String converted = convertAmpCodes(CommandPresentation.preferTravel(text));
         // 仅在含 MiniMessage 标签时才做完整解析（渲染高频路径的快路径）
         if (converted.indexOf('<') >= 0) {
             try {
@@ -487,9 +488,9 @@ public class ConfigManager {
             return net.kyori.adventure.text.Component.empty();
         }
         try {
-            return MiniMessageHolder.MINI.deserialize(convertAmpCodes(text));
+            return MiniMessageHolder.MINI.deserialize(convertAmpCodes(CommandPresentation.preferTravel(text)));
         } catch (Exception e) {
-            return net.kyori.adventure.text.Component.text(text);
+            return net.kyori.adventure.text.Component.text(CommandPresentation.preferTravel(text));
         }
     }
 

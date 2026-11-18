@@ -140,6 +140,61 @@ public final class AtomicInviteLedger {
         });
     }
 
+    /** Retire the entire held inventory and update the obsolete single-code field atomically. */
+    public void clearCodes(UUID owner) {
+        transaction(owner, unit -> {
+            unit.ledger.retireAllHeld(owner, "ADMIN");
+            String placeholder = "C" + UUID.randomUUID().toString().replace("-", "").substring(0, 15);
+            try (PreparedStatement stmt = unit.conn.prepareStatement("UPDATE " + t("players")
+                    + " SET invite_code = ?, personal_code_ready = 0, last_code_change = ? WHERE uuid = ?")) {
+                stmt.setString(1, placeholder);
+                stmt.setLong(2, now(unit.conn));
+                stmt.setString(3, owner.toString());
+                stmt.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    /** Reset player data under the same owner lock as grants, reservations and binds. */
+    public UUID resetPlayer(UUID owner) {
+        return transaction(owner, unit -> {
+            UUID inviter = null;
+            try (PreparedStatement stmt = unit.conn.prepareStatement("SELECT inviter_uuid FROM "
+                    + t("records") + " WHERE invitee_uuid = ?" + lockSuffix())) {
+                stmt.setString(1, owner.toString());
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) inviter = UUID.fromString(rs.getString(1));
+                }
+            }
+            if (inviter != null) {
+                updatePlayer(unit.conn, "UPDATE " + t("players")
+                    + " SET total_invites = CASE WHEN total_invites > 0 THEN total_invites - 1 ELSE 0 END WHERE uuid = ?", inviter);
+            }
+            updatePlayer(unit.conn, "DELETE FROM " + t("records") + " WHERE invitee_uuid = ?", owner);
+            updatePlayer(unit.conn, "DELETE FROM " + t("bound_player_names") + " WHERE player_uuid = ?", owner);
+            unit.ledger.retireAllHeld(owner, "RESET");
+            updatePlayer(unit.conn, "DELETE FROM " + t("pending_milestones") + " WHERE player_uuid = ?", owner);
+            updatePlayer(unit.conn, """
+                UPDATE %s SET total_invites = 0, claimed_milestones = '[]', announced_milestones = '[]',
+                    gift_id = NULL, purchased_gifts = '[]', gift_purchase_time = NULL, money = 0,
+                    contribution_amount = 0, total_rebate_amount = 0, total_rebate_points = 0,
+                    bind_ip = NULL, unclaimed_rebate = 0, milestone_enabled = 1, rebate_enabled = 1,
+                    gift_enabled = 1, quota_policy_key = NULL, quota_max_codes = -1, quota_next_boundary = -1,
+                    quota_high_water_minutes = 0, quota_legacy_migrated = 0, last_permission_group = NULL
+                WHERE uuid = ?
+                """.formatted(t("players")), owner);
+            return inviter;
+        });
+    }
+
+    private static void updatePlayer(Connection conn, String sql, UUID player) throws SQLException {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, player.toString());
+            stmt.executeUpdate();
+        }
+    }
+
     public boolean release(Pending expected) { return release(expected, false); }
     public boolean expire(Pending expected) { return release(expected, true); }
     private boolean release(Pending expected, boolean expiredOnly) {

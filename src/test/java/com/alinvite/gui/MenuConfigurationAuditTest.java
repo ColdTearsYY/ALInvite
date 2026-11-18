@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MenuConfigurationAuditTest {
 
     private static final List<String> MENU_FILES =
-        List.of("main_menu.yml", "veteran_menu.yml", "shop_menu.yml", "rebate_history.yml", "admin_rebate_history.yml");
+        List.of("main_menu.yml", "veteran_menu.yml", "shop_menu.yml", "rebate_history.yml", "admin_rebate_history.yml", "invite_codes_menu.yml");
 
     private File resource(String path) {
         // 兼容从项目根目录或模块目录运行测试
@@ -133,7 +133,7 @@ class MenuConfigurationAuditTest {
         //  - 不在 DEFAULT_MENUS → 服务器上缺文件时不会自动补；
         //  - 根键与菜单名不一致 → loader.get(name) 返回 null，菜单打不开（报"菜单配置不存在"）。
         List<String> expected = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP,
-                MenuNames.REBATE_HISTORY, MenuNames.ADMIN_REBATE_HISTORY);
+                MenuNames.REBATE_HISTORY, MenuNames.ADMIN_REBATE_HISTORY, MenuNames.CODES);
         List<String> errors = new ArrayList<>();
         for (String name : expected) {
             String file = name + ".yml";

@@ -202,9 +202,8 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player)));
                 return CompletableFuture.completedFuture(null);
             }
-            return plugin.getInviteManager().ensureInviteCode(player.getUniqueId())
-                .thenCompose(code -> plugin.getDatabaseManager().reserveInviteForName(
-                    player.getUniqueId(), inviterIp, normalizedName, targetName))
+            return plugin.getDatabaseManager().reserveInviteForName(
+                    player.getUniqueId(), inviterIp, normalizedName, targetName)
                 .thenApply(result -> {
                     if (result.success()) {
                         Player target = Bukkit.getPlayerExact(targetName);
@@ -230,6 +229,18 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             plugin.getScheduler().runAtPlayer(player, () ->
                 player.sendMessage(plugin.getConfigManager().getMessage("commands.add.failed", player)));
             return null;
+        });
+    }
+
+    private void completeAdminWrite(CommandSender sender, String target, String action, CompletableFuture<Void> write) {
+        write.whenComplete((ignored, error) -> {
+            if (error != null) {
+                plugin.getLogger().log(java.util.logging.Level.WARNING, "邀请数据操作失败 " + action, error);
+            }
+            Runnable reply = () -> sender.sendMessage(plugin.getConfigManager().getMessage(
+                "commands.admin." + action + (error == null ? "_success" : "_failed")).replace("{player}", target));
+            if (sender instanceof Player player) plugin.getScheduler().runAtPlayer(player, reply);
+            else plugin.getScheduler().runGlobal(reply);
         });
     }
 
@@ -352,7 +363,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     "commands.admin.registration_close_success")));
             case "givecode" -> {
                 if (args.length < 3) {
-                    sender.sendMessage("用法: /alinvite admin givecode <玩家>");
+                    sender.sendMessage("用法: /travel admin givecode <玩家>");
                     return;
                 }
                 Player target = Bukkit.getPlayer(args[2]);
@@ -376,18 +387,12 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             case "clearcode" -> {
                 if (args.length < 3) {
-                    sender.sendMessage("用法: /alinvite admin clearcode <玩家>");
+                    sender.sendMessage("用法: /travel admin clearcode <玩家>");
                     return;
                 }
                 UUID targetUuid = getPlayerUuid(args[2]);
 
-                plugin.getDatabaseManager().clearInviteCode(targetUuid).thenRun(() -> {
-                    plugin.getCacheManager().invalidateInviteCode(targetUuid);
-
-                    String msg = plugin.getConfigManager().getMessage("commands.admin.clearcode_success")
-                        .replace("{player}", args[2]);
-                    sender.sendMessage(msg);
-                });
+                completeAdminWrite(sender, args[2], "clearcode", plugin.getDatabaseManager().clearInviteCode(targetUuid));
             }
             case "contrib" -> {
                 if (args.length < 3) {
@@ -624,7 +629,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             case "addinvite" -> {
                 if (args.length < 4) {
-                    sender.sendMessage("用法: /alinvite admin addinvite <玩家> <数量>");
+                    sender.sendMessage("用法: /travel admin addinvite <玩家> <数量>");
                     return;
                 }
                 UUID targetUuid = getPlayerUuid(args[2]);
@@ -657,20 +662,12 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             case "reset" -> {
                 if (args.length < 3) {
-                    sender.sendMessage("用法: /alinvite admin reset <玩家>");
+                    sender.sendMessage("用法: /travel admin reset <玩家>");
                     return;
                 }
                 UUID targetUuid = getPlayerUuid(args[2]);
 
-                plugin.getDatabaseManager().resetPlayerData(targetUuid).thenRun(() -> {
-                    plugin.getCacheManager().invalidateStats(targetUuid);
-                    plugin.getCacheManager().invalidateInviteCode(targetUuid);
-                    plugin.getCacheManager().invalidateGiftId(targetUuid);
-
-                    String message = plugin.getConfigManager().getMessage("commands.admin.reset_success")
-                        .replace("{player}", args[2]);
-                    sender.sendMessage(message);
-                });
+                completeAdminWrite(sender, args[2], "reset", plugin.getDatabaseManager().resetPlayerData(targetUuid));
             }
             case "punish" -> {
                 if (args.length < 3) {
@@ -702,7 +699,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             case "announce" -> {
                 if (args.length < 4) {
-                    sender.sendMessage("用法: /alinvite admin announce <玩家> <里程碑值>");
+                    sender.sendMessage("用法: /travel admin announce <玩家> <里程碑值>");
                     return;
                 }
                 Player target = Bukkit.getPlayer(args[2]);
@@ -736,12 +733,12 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 // /alinvite admin unclaimed <玩家>              查看未领取余额
                 // /alinvite admin unclaimed clear <玩家>        核销清零（线下已发放现金后执行）
                 if (args.length < 3) {
-                    sender.sendMessage("用法: /alinvite admin unclaimed <玩家> | unclaimed clear <玩家>");
+                    sender.sendMessage("用法: /travel admin unclaimed <玩家> | unclaimed clear <玩家>");
                     return;
                 }
                 if (args[2].equalsIgnoreCase("clear")) {
                     if (args.length < 4) {
-                        sender.sendMessage("用法: /alinvite admin unclaimed clear <玩家>");
+                        sender.sendMessage("用法: /travel admin unclaimed clear <玩家>");
                         return;
                     }
                     UUID targetUuid = getPlayerUuid(args[3]);
@@ -767,7 +764,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                     return;
                 }
                 if (args.length < 3) {
-                    sender.sendMessage("用法: /alinvite admin rebate <玩家>");
+                    sender.sendMessage("用法: /travel admin rebate <玩家>");
                     return;
                 }
                 UUID targetUuid = getPlayerUuid(args[2]);
@@ -775,7 +772,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             case "checkgroup" -> {
                 if (args.length < 3) {
-                    sender.sendMessage("用法: /alinvite admin checkgroup <玩家>");
+                    sender.sendMessage("用法: /travel admin checkgroup <玩家>");
                     return;
                 }
                 Player target = Bukkit.getPlayer(args[2]);
@@ -958,7 +955,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         }
 
         if (args.length < 3) {
-            sender.sendMessage("用法: /alinvite givedj <玩家> <点券数量> [-norebate]");
+            sender.sendMessage("用法: /travel givedj <玩家> <点券数量> [-norebate]");
             sender.sendMessage("参数说明:");
             sender.sendMessage("  - 玩家: 接收点券的玩家名称");
             sender.sendMessage("  - 点券数量: 充值的点券数量");

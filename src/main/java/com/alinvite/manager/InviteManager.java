@@ -1,20 +1,13 @@
 package com.alinvite.manager;
 
 import com.alinvite.ALInvite;
-import com.alinvite.utils.AsyncPool;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.security.SecureRandom;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 邀请码生成与邀请绑定。
- * 生成流程全链无 join：候选码生成与查重走 IO 线程池，同线程直查。
- */
+/** 一次性邀请码库存查询与事务绑定。 */
 public class InviteManager {
 
     private final ALInvite plugin;
@@ -28,20 +21,10 @@ public class InviteManager {
      * 库存只由配额水位事务（累计在线时长）或旧数据迁移产生。
      */
     public CompletableFuture<String> ensureInviteCode(UUID uuid) {
-        String cached = plugin.getCacheManager().getInviteCode(uuid);
-        if (cached != null && !cached.isEmpty()) {
-            return CompletableFuture.completedFuture(cached);
-        }
-        return AsyncPool.supply(() -> {
-            String code = plugin.getDatabaseManager().getAvailableCodeSync(uuid);
-            if (code != null && !code.isEmpty()) {
-                plugin.getCacheManager().setInviteCode(uuid, code);
-            }
-            return code;
-        });
+        return getInviteCode(uuid);
     }
 
-    /** 全部可用邀请码（/alinvite code 展示用）。 */
+    /** 按发放顺序读取所有可用邀请码。 */
     public CompletableFuture<java.util.List<String>> listAvailableCodes(UUID uuid) {
         return plugin.getDatabaseManager().listAvailableCodes(uuid);
     }
@@ -87,7 +70,7 @@ public class InviteManager {
     }
 
     public CompletableFuture<String> getInviteCode(UUID uuid) {
-        return plugin.getCacheManager().getInviteCodeAsync(uuid);
+        return plugin.getDatabaseManager().getInviteCodeByPlayer(uuid);
     }
 
     private CompletableFuture<String> getPlayerIpAsync(UUID uuid) {

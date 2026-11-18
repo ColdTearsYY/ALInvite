@@ -274,6 +274,114 @@ class AtomicInviteLedgerTest {
         }
     }
 
+    List<String> earnTwo() {
+        atomic.tick(owner, 0, vip, rules::byKey);
+        hours(48);
+        assertEquals(2, atomic.tick(owner, 0, vip, rules::byKey).granted());
+        List<String> codes = ledger.listAvailable(owner);
+        assertEquals(2, new HashSet<>(codes).size());
+        return codes;
+    }
+
+    @Test void twoDistinctCodesBindConcurrentlyForOneOwner() throws Exception {
+        List<String> codes = earnTwo();
+        var first = request(codes.get(0), null);
+        var second = request(codes.get(1), null);
+        AtomicInviteLedger.BindHook hook = (conn, request, outcome) -> deliveries.enqueue(conn, List.of(
+            new DeliveryDao.WorkSpec("multi:" + request.inviteeUuid(), request.inviteeUuid(), "reward", "{}", false)));
+        var remote = newAtomic();
+        atomic.setBindHook(hook);
+        remote.setBindHook(hook);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var start = new CountDownLatch(1);
+            var firstBind = pool.submit(() -> { start.await(); return atomic.bind(first, null); });
+            var secondBind = pool.submit(() -> { start.await(); return remote.bind(second, null); });
+            start.countDown();
+            var firstResult = firstBind.get(20, TimeUnit.SECONDS);
+            var secondResult = secondBind.get(20, TimeUnit.SECONDS);
+            assertTrue(firstResult.success());
+            assertTrue(secondResult.success());
+            assertEquals(Set.of(1, 2), Set.of(firstResult.totalInvites, secondResult.totalInvites));
+        }
+        assertEquals(2, rowCount("records"));
+        assertEquals(2, deliveries.list(null, 50).size());
+        assertEquals(List.of(), ledger.listAvailable(owner));
+        assertFalse(atomic.bind(request(codes.get(0), null), null).success());
+        assertFalse(remote.bind(request(codes.get(1), null), null).success());
+        assertEquals(2, deliveries.list(null, 50).size());
+    }
+
+    @Test void independentReservationsReturnAndConsumeTheirExactCodes() {
+        List<String> codes = earnTwo();
+        assertEquals(InviteLedgerDao.ReserveStatus.SUCCESS, atomic.reserve(owner, null, "first", "First", 0, TTL).status());
+        assertEquals(InviteLedgerDao.ReserveStatus.SUCCESS, newAtomic().reserve(owner, null, "second", "Second", 0, TTL).status());
+        var first = atomic.getPending("first");
+        var second = atomic.getPending("second");
+        assertEquals(codes.get(0), first.reservedCode());
+        assertEquals(codes.get(1), second.reservedCode());
+        assertEquals(2, atomic.inventory(owner).reserved());
+        assertTrue(atomic.release(first));
+        assertEquals(List.of(codes.getFirst()), ledger.listAvailable(owner));
+        assertEquals(second, atomic.getPending("second"));
+        assertFalse(atomic.bind(request(first.reservedCode(), "second"), second.reservationId()).success());
+        assertTrue(newAtomic().bind(request(second.reservedCode(), "second"), second.reservationId()).success());
+        assertFalse(atomic.release(first));
+        assertEquals(List.of(codes.getFirst()), ledger.listAvailable(owner));
+        assertNull(atomic.getPending("second"));
+    }
+
+    @Test void clearRetiresHeldInventoryAndPreservesPreviouslyUsedCode() throws Exception {
+        List<String> initial = earnTwo();
+        assertTrue(atomic.bind(request(initial.get(1), null), null).success());
+        hours(72);
+        assertEquals(1, atomic.tick(owner, 0, vip, rules::byKey).granted());
+        List<String> held = ledger.listAvailable(owner);
+        assertEquals(InviteLedgerDao.ReserveStatus.SUCCESS, atomic.reserve(owner, null, "reserved", "Reserved", 0, TTL).status());
+        var pending = atomic.getPending("reserved");
+        atomic.clearCodes(owner);
+        assertEquals(0, atomic.inventory(owner).available());
+        assertEquals(0, atomic.inventory(owner).reserved());
+        assertNull(atomic.getPending("reserved"));
+        assertFalse(atomic.release(pending));
+        try (Connection connection = open()) {
+            for (String code : held) assertEquals(InviteLedgerDao.STATUS_RETIRED, ledger.findCode(connection, code).status());
+            assertEquals(InviteLedgerDao.STATUS_USED, ledger.findCode(connection, initial.get(1)).status());
+        }
+        assertEquals(1, rowCount("records"));
+    }
+
+    @Test void clearRollsBackEntireInventoryWhenDeletingPendingFails() throws Exception {
+        List<String> codes = earnTwo();
+        assertEquals(InviteLedgerDao.ReserveStatus.SUCCESS, atomic.reserve(owner, null, "reserved", "Reserved", 0, TTL).status());
+        var pending = atomic.getPending("reserved");
+        execute("ALTER TABLE " + prefix + "pending_invites RENAME TO " + prefix + "hidden_pending");
+        try {
+            assertThrows(IllegalStateException.class, () -> atomic.clearCodes(owner));
+        } finally {
+            execute("ALTER TABLE " + prefix + "hidden_pending RENAME TO " + prefix + "pending_invites");
+        }
+        assertEquals(pending, atomic.getPending("reserved"));
+        assertEquals(List.of(codes.get(1)), ledger.listAvailable(owner));
+        assertEquals(1, atomic.inventory(owner).reserved());
+    }
+
+    @Test void resetRollsBackInventoryWhenLaterDeleteFails() throws Exception {
+        List<String> codes = earnTwo();
+        assertEquals(InviteLedgerDao.ReserveStatus.SUCCESS, atomic.reserve(owner, null, "reserved", "Reserved", 0, TTL).status());
+        var pending = atomic.getPending("reserved");
+        // Schema deliberately lacks pending_milestones, so failure occurs after retiring the held codes.
+        assertThrows(IllegalStateException.class, () -> atomic.resetPlayer(owner));
+        assertEquals(pending, atomic.getPending("reserved"));
+        assertEquals(List.of(codes.get(1)), ledger.listAvailable(owner));
+        assertEquals(1, atomic.inventory(owner).reserved());
+    }
+
+    void execute(String sql) throws SQLException {
+        try (Connection connection = open(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
+        }
+    }
+
     int rowCount(String table) throws SQLException {
         try(Connection conn=open(); Statement s=conn.createStatement(); ResultSet rs=s.executeQuery("SELECT COUNT(*) FROM "+prefix+table)) {
             rs.next(); return rs.getInt(1);

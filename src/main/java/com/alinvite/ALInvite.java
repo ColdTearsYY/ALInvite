@@ -293,8 +293,8 @@ public class ALInvite extends JavaPlugin {
 
     private void initCommands() {
         commandHandler = new CommandHandler(this);
-        getCommand("alinvite").setExecutor(commandHandler);
-        getCommand("alinvite").setTabCompleter(commandHandler);
+        getCommand("travel").setExecutor(commandHandler);
+        getCommand("travel").setTabCompleter(commandHandler);
     }
 
     private void initListeners() {

@@ -1,0 +1,68 @@
+config_version: 1
+invite_codes_menu:
+  title: "&6&lMy invite codes"
+  shape:
+    - "####S####"
+    - "#CCCCCCC#"
+    - "#CCCCCCC#"
+    - "#CCCCCCC#"
+    - "#CCCCCCC#"
+    - "P#R#H#X#N"
+  items:
+    S:
+      material: BOOK
+      name: "&eMy invite codes"
+      lore:
+        - "%invite_codes_summary%"
+        - "&7Each code admits one newcomer"
+        - "&7Used and reserved codes are excluded"
+        - "&aClick to refresh available stock"
+      triggers:
+        left: ['refresh_codes']
+    C:
+      dynamic: true
+      material: PAPER
+      name: "&e%current_code%"
+      lore:
+        - "&aAvailable · single-use code"
+        - "&7Click, then copy from chat to share"
+        - "&7Copying does not consume or reserve a code"
+      triggers:
+        left: ['share_code:%current_code%']
+      states:
+        empty:
+          material: GRAY_DYE
+          name: "&7No available invite codes"
+          lore:
+            - "&7Return after your online-time award"
+            - "&7Reserved codes are not shareable here"
+    P:
+      material: ARROW
+      name: "&aPrevious page"
+      lore: ['&7Page %page% / %total_pages%']
+      triggers:
+        left: ['prev_page']
+    N:
+      material: ARROW
+      name: "&aNext page"
+      lore: ['&7Page %page% / %total_pages%']
+      triggers:
+        left: ['next_page']
+    R:
+      material: SUNFLOWER
+      name: "&aRefresh list"
+      triggers:
+        left: ['refresh_codes']
+    H:
+      material: OAK_DOOR
+      name: "&aMain menu"
+      triggers:
+        left: ['open_main']
+    X:
+      material: BARRIER
+      name: "&cClose"
+      triggers:
+        left: ['close']
+    '#':
+      material: BLACK_STAINED_GLASS_PANE
+      name: ' '

@@ -1861,22 +1861,7 @@ public class DatabaseManager {
     /** 管理员清码：该玩家全部可用/预留码永久作废，并清空旧固定码字段。 */
     public CompletableFuture<Void> clearInviteCode(UUID uuid) {
         return AsyncPool.run(() -> {
-            try {
-                ledger.retireAllHeld(uuid, "ADMIN");
-            } catch (RuntimeException e) {
-                plugin.getLogger().severe("清除邀请码失败: " + e.getMessage());
-            }
-            String sql = "UPDATE " + tablePrefix + "players SET invite_code = ?, personal_code_ready = 0, last_code_change = ? WHERE uuid = ?";
-            String placeholder = "C" + UUID.randomUUID().toString().replace("-", "").substring(0, 15);
-            try (Connection conn = getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, placeholder);
-                stmt.setLong(2, System.currentTimeMillis());
-                stmt.setString(3, uuid.toString());
-                stmt.executeUpdate();
-            } catch (SQLException e) {
-                plugin.getLogger().severe("清除邀请码失败: " + e.getMessage());
-            }
+            atomicLedger.clearCodes(uuid);
             notifyChange(uuid, "invitecode");
         });
     }
@@ -2388,103 +2373,10 @@ public class DatabaseManager {
     }
 
     public void resetPlayerDataSync(UUID uuid) {
-        try (Connection conn = getConnection()) {
-            UUID inviterUuid = null;
-            String getInviterSql = "SELECT inviter_uuid FROM " + tablePrefix + "records WHERE invitee_uuid = ?";
-            try (PreparedStatement stmt = conn.prepareStatement(getInviterSql)) {
-                stmt.setString(1, uuid.toString());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    if (rs.next()) {
-                        String inviterStr = rs.getString("inviter_uuid");
-                        if (inviterStr != null) {
-                            inviterUuid = UUID.fromString(inviterStr);
-                        }
-                    }
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().warning("获取邀请人失败: " + e.getMessage());
-            }
-
-            if (inviterUuid != null) {
-                String updateInviterSql = "UPDATE " + tablePrefix + "players SET total_invites = total_invites - 1 WHERE uuid = ?";
-                try (PreparedStatement stmt = conn.prepareStatement(updateInviterSql)) {
-                    stmt.setString(1, inviterUuid.toString());
-                    stmt.executeUpdate();
-                } catch (SQLException e) {
-                    plugin.getLogger().warning("回滚邀请人计数失败: " + e.getMessage());
-                }
-            }
-
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "DELETE FROM " + tablePrefix + "records WHERE invitee_uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "DELETE FROM " + tablePrefix + "bound_player_names WHERE player_uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-
-            // 撤销该玩家的全部库存与预邀请：已发出的码永久作废，不会被任何人重新绑定。
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "UPDATE " + tablePrefix + "invite_codes SET status = 'RETIRED',"
-                        + " reserved_target = NULL, reserved_at = NULL, retired_reason = 'RESET'"
-                        + " WHERE owner_uuid = ? AND status IN ('AVAILABLE', 'RESERVED')")) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "DELETE FROM " + tablePrefix + "pending_invites WHERE inviter_uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "UPDATE " + tablePrefix + "players SET invite_slots = 0 WHERE uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "DELETE FROM " + tablePrefix + "pending_milestones WHERE player_uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-
-            String resetPlayerSql = "UPDATE " + tablePrefix + "players SET " +
-                "total_invites = 0, " +
-                "claimed_milestones = '[]', " +
-                "announced_milestones = '[]', " +
-                "gift_id = NULL, " +
-                "purchased_gifts = '[]', " +
-                "gift_purchase_time = NULL, " +
-                "money = 0, " +
-                "contribution_amount = 0, " +
-                "total_rebate_amount = 0, " +
-                "total_rebate_points = 0, " +
-                "bind_ip = NULL, " +
-                "unclaimed_rebate = 0, " +
-                "milestone_enabled = 1, " +
-                "rebate_enabled = 1, " +
-                "gift_enabled = 1, " +
-                "quota_policy_key = NULL, " +
-                "quota_next_boundary = -1, " +
-                "quota_high_water_minutes = 0, " +
-                "quota_legacy_migrated = 0, " +
-                "last_permission_group = NULL " +
-                "WHERE uuid = ?";
-
-            try (PreparedStatement stmt = conn.prepareStatement(resetPlayerSql)) {
-                stmt.setString(1, uuid.toString());
-                stmt.executeUpdate();
-            }
-
-            plugin.getLogger().info("玩家数据已重置: " + uuid);
-            notifyChange(uuid, "reset");
-        } catch (SQLException e) {
-            plugin.getLogger().severe("重置玩家数据失败: " + e.getMessage());
-        }
+        UUID inviterUuid = atomicLedger.resetPlayer(uuid);
+        if (inviterUuid != null) notifyChange(inviterUuid, "stats");
+        notifyChange(uuid, "reset");
+        plugin.getLogger().info("玩家数据已重置: " + uuid);
     }
 
     // ───────────────────────── 点券返点流水 ─────────────────────────

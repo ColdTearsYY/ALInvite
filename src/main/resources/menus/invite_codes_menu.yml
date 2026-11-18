@@ -1,0 +1,68 @@
+config_version: 1
+invite_codes_menu:
+  title: "&6&l我的邀请码"
+  shape:
+    - "####S####"
+    - "#CCCCCCC#"
+    - "#CCCCCCC#"
+    - "#CCCCCCC#"
+    - "#CCCCCCC#"
+    - "P#R#H#X#N"
+  items:
+    S:
+      material: BOOK
+      name: "&e我的邀请码"
+      lore:
+        - "%invite_codes_summary%"
+        - "&7每个邀请码可成功邀请一位新人"
+        - "&7已使用或已预留的邀请码不在此列表"
+        - "&a点击刷新可用库存"
+      triggers:
+        left: ['refresh_codes']
+    C:
+      dynamic: true
+      material: PAPER
+      name: "&e%current_code%"
+      lore:
+        - "&a可用 · 一次性邀请码"
+        - "&7点击后在聊天栏复制，分享给朋友"
+        - "&7复制不会消耗或预留邀请码"
+      triggers:
+        left: ['share_code:%current_code%']
+      states:
+        empty:
+          material: GRAY_DYE
+          name: "&7暂无可用邀请码"
+          lore:
+            - "&7达到在线时长发放条件后再来看看"
+            - "&7已预留的邀请码暂不在可分享列表"
+    P:
+      material: ARROW
+      name: "&a上一页"
+      lore: ['&7第 %page% / %total_pages% 页']
+      triggers:
+        left: ['prev_page']
+    N:
+      material: ARROW
+      name: "&a下一页"
+      lore: ['&7第 %page% / %total_pages% 页']
+      triggers:
+        left: ['next_page']
+    R:
+      material: SUNFLOWER
+      name: "&a刷新列表"
+      triggers:
+        left: ['refresh_codes']
+    H:
+      material: OAK_DOOR
+      name: "&a返回主菜单"
+      triggers:
+        left: ['open_main']
+    X:
+      material: BARRIER
+      name: "&c关闭"
+      triggers:
+        left: ['close']
+    '#':
+      material: BLACK_STAINED_GLASS_PANE
+      name: ' '

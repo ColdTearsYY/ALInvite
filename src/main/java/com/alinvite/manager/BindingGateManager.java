@@ -12,6 +12,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -27,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Keeps unbound players frozen (spectator + anchored) until they bind or the grace period expires. */
 public final class BindingGateManager implements Listener {
 
-    private static final Set<String> ALLOWED_COMMAND_ROOTS = Set.of("alinvite", "ali", "invite");
+    private static final Set<String> ALLOWED_COMMAND_ROOTS = Set.of("travel", "alinvite", "ali", "invite");
 
     private record Session(Player player, Location anchor, long deadlineMillis, long nextReminderMillis, GateClaimSession claim) {
         Session withNextReminder(long nextReminder) {
@@ -305,6 +306,13 @@ public final class BindingGateManager implements Listener {
         }
         Session removed = sessions.remove(uuid);
         if (removed != null) removed.claim().close();
+    }
+
+    /** Prefer the public root in the client command list while retaining legacy dispatch aliases. */
+    @EventHandler
+    public void onCommandSuggestions(PlayerCommandSendEvent event) {
+        event.getCommands().removeIf(root -> root.equalsIgnoreCase("alinvite")
+            || root.toLowerCase(Locale.ROOT).startsWith("alinvite:"));
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)

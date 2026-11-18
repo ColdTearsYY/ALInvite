@@ -10,6 +10,7 @@ public final class MenuNames {
     public static final String SHOP = "shop_menu";
     public static final String REBATE_HISTORY = "rebate_history";
     public static final String ADMIN_REBATE_HISTORY = "admin_rebate_history";
+    public static final String CODES = "invite_codes_menu";
 
     private MenuNames() {
     }

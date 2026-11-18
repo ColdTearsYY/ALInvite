@@ -49,7 +49,8 @@ main_menu:
       name: "&6&l邀请中心"
       lore:
         - "&6▶ &8邀请概览"
-        - "&e▸ &7我的邀请码: &e%invite_code%"
+        - "%invite_codes_summary%"
+        - "%invite_code_preview%"
         - "&a▸ &7累计邀请人数: &e%total_invites%"
         - "&7已提交在线: &e%playtime%"
         - "&7完整库存与下一节点: &f/alinvite status"
@@ -58,9 +59,12 @@ main_menu:
         - ""
         - "&6▶ &8操作"
         - "&7• &a鼠标左键 &a➤ &f打开邀请中心"
+        - "&7• &a鼠标右键 &a➤ &f查看全部邀请码并复制分享"
       triggers:
         left:
           - 'open_veteran'
+        right:
+          - 'open_codes'
     X:
       material: 'BARRIER'
       custom_model_data: 0

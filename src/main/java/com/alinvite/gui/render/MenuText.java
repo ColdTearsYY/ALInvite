@@ -24,6 +24,7 @@ public final class MenuText {
     public static final Set<String> INTERNAL_KEYS = Set.of(
             "page", "total_pages", "prev_page_hint", "next_page_hint",
             "bind_status", "inviter_name", "invite_code", "total_invites", "total_rebate", "contribution",
+            "invite_available_count", "invite_codes_summary", "invite_code_preview", "current_code",
             "has_gift", "gift_name", "gift_status", "gift_remaining_days", "gift_id", "gift_material",
             "gift_reward_lore", "next_milestone",
             "milestone_name", "milestone_required", "milestone_status",

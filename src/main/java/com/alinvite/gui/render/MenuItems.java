@@ -40,7 +40,11 @@ public final class MenuItems {
         String rawName = state != null && state.hasName() ? state.getName() : item.getName();
         String name = MenuText.render(rawName, context);
         List<String> loreSource = state != null && state.hasLore() ? state.getLore() : item.getLore();
-        List<String> lore = MenuText.renderLore(loreSource, context);
+        List<String> lore = new java.util.ArrayList<>(MenuText.renderLore(
+            InviteCodeMenuSupport.upgradeLore(loreSource, context), context));
+        String codesTrigger = context.lists().containsKey("available_invite_codes")
+            ? InviteCodeMenuSupport.entryTrigger(item) : null;
+        if (codesTrigger != null) lore.add(plugin.getConfigManager().getMessageRaw("codes_menu.entry_" + codesTrigger));
 
         ItemMeta meta = stack.getItemMeta();
         if (meta != null) {
@@ -57,9 +61,43 @@ public final class MenuItems {
             meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
             item.getTriggers().forEach((trigger, actions) ->
                 pdc.write(meta, trigger, MenuText.renderActionList(actions, context)));
+            if (codesTrigger != null) pdc.write(meta, codesTrigger, List.of("open_codes"));
             stack.setItemMeta(meta);
         }
         return stack;
+    }
+
+    /** Fallback for legacy menus whose old code button already uses every gesture. */
+    public static void ensureCodesEntry(ALInvite plugin, ActionPdc pdc,
+                                        org.bukkit.inventory.Inventory inventory, RenderContext context) {
+        if (!context.lists().containsKey("available_invite_codes")) return;
+        var gestures = List.of("right", "shift_right", "shift_left", "left");
+        for (ItemStack stack : inventory.getContents()) {
+            if (stack == null || !stack.hasItemMeta()) continue;
+            for (String gesture : gestures) {
+                String actions = pdc.read(stack.getItemMeta(), gesture);
+                if (actions != null && java.util.Arrays.stream(actions.split(ActionPdc.SEPARATOR))
+                        .map(String::trim).anyMatch(action -> action.equalsIgnoreCase("open_codes")
+                            || action.equalsIgnoreCase("action:open_codes"))) return;
+            }
+        }
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack == null || !stack.hasItemMeta()) continue;
+            ItemMeta meta = stack.getItemMeta();
+            for (String gesture : gestures) {
+                if (pdc.read(meta, gesture) != null) continue;
+                var lore = new java.util.ArrayList<>(meta.hasLore() ? meta.getLore() : List.<String>of());
+                lore.add(ConfigManager.colorize(context.strings().get("invite_codes_summary")));
+                lore.add(plugin.getConfigManager().getMessageRaw("codes_menu.entry_" + gesture));
+                meta.setLore(lore.stream().map(ConfigManager::colorize).toList());
+                pdc.write(meta, gesture, List.of("open_codes"));
+                stack.setItemMeta(meta);
+                inventory.setItem(slot, stack);
+                return;
+            }
+        }
+        plugin.getLogger().warning("自定义菜单所有物品的点击方式均已占用，请配置 open_codes 邀请码列表入口。");
     }
 
     private static ItemStack createStack(String spec, RenderContext context) {

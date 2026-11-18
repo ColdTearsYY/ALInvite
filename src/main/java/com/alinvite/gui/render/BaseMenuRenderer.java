@@ -57,8 +57,15 @@ public abstract class BaseMenuRenderer<D> {
             player.sendMessage(ConfigManager.colorize("&c菜单配置不存在: " + menuName()));
             return;
         }
+        MenuSessionStore.Session previous = sessions.get(player.getUniqueId());
         scheduler.runAsync(() -> {
-            D data = loadData(player);
+            D data;
+            try {
+                data = loadData(player);
+            } catch (RuntimeException error) {
+                onLoadFailure(player, previous, error);
+                return;
+            }
             scheduler.runAtPlayer(player, () -> {
                 if (!player.isOnline()) {
                     return;
@@ -78,7 +85,13 @@ public abstract class BaseMenuRenderer<D> {
         }
         Inventory inventory = session.inventory();
         scheduler.runAsync(() -> {
-            D data = loadData(player);
+            D data;
+            try {
+                data = loadData(player);
+            } catch (RuntimeException error) {
+                onLoadFailure(player, session, error);
+                return;
+            }
             scheduler.runAtPlayer(player, () -> {
                 if (!player.isOnline() || !sessions.isTracked(player.getUniqueId(), inventory)) {
                     return;
@@ -90,6 +103,10 @@ public abstract class BaseMenuRenderer<D> {
                 fillDynamic(player, config, inventory, data, pageOf(player));
             });
         });
+    }
+
+    protected void onLoadFailure(Player player, MenuSessionStore.Session expected, RuntimeException error) {
+        plugin.getLogger().log(java.util.logging.Level.WARNING, "读取菜单数据失败: " + menuName(), error);
     }
 
     private int pageOf(Player player) {
@@ -119,6 +136,10 @@ public abstract class BaseMenuRenderer<D> {
                 }
             }
             fillDynamic(player, config, inventory, data, page);
+            if (com.alinvite.gui.MenuNames.MAIN.equals(menuName())
+                    || com.alinvite.gui.MenuNames.VETERAN.equals(menuName())) {
+                MenuItems.ensureCodesEntry(plugin, pdc, inventory, contextOf(data));
+            }
         }
         return inventory;
     }

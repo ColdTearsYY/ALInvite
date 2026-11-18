@@ -41,7 +41,9 @@ public class PlaceholderResolver {
     /** 仅在 IO 线程调用（AsyncPool / scheduler.runAsync 内部）。 */
     public RenderContext renderContext(Player player) {
         RenderContext context = new RenderContext(player);
-        context.add("invite_code", getInviteCodeSync(player.getUniqueId()));
+        com.alinvite.gui.render.InviteCodeMenuSupport.populate(context,
+            plugin.getDatabaseManager().listAvailableCodesSync(player.getUniqueId()),
+            plugin.getConfigManager()::getMessageRaw);
         context.add("bind_status", getBindStatusSync(player.getUniqueId()));
         context.add("inviter_name", getInviterNameSync(player.getUniqueId()));
         context.add("total_invites", getTotalInvitesSync(player.getUniqueId()));

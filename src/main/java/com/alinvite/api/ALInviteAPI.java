@@ -33,9 +33,14 @@ public final class ALInviteAPI {
         return getInviteCode(player.getUniqueId());
     }
 
+    /** Legacy single-code lookup. Returns the first currently available code, or null. */
     public static CompletableFuture<String> getInviteCode(UUID uuid) {
-        return AsyncPool.supply(() -> plugin.getCacheManager().getInviteCode(uuid,
-                plugin.getDatabaseManager()::getInviteCodeByPlayerSync));
+        return plugin.getInviteManager().getInviteCode(uuid);
+    }
+
+    /** Read-only snapshot of all available codes in issuance order. */
+    public static CompletableFuture<List<String>> getAvailableInviteCodes(UUID uuid) {
+        return plugin.getInviteManager().listAvailableCodes(uuid).thenApply(List::copyOf);
     }
 
     public static CompletableFuture<Integer> getTotalInvites(Player player) {

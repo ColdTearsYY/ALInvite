@@ -25,6 +25,7 @@ public class MenuManager {
     private final com.alinvite.gui.render.ShopMenuRenderer shopRenderer;
     private final com.alinvite.gui.render.RebateHistoryRenderer rebateHistoryRenderer;
     private final com.alinvite.gui.render.AdminRebateHistoryRenderer adminRebateHistoryRenderer;
+    private final com.alinvite.gui.render.InviteCodesMenuRenderer codesRenderer;
 
     public MenuManager(ALInvite plugin) {
         this.plugin = plugin;
@@ -41,6 +42,7 @@ public class MenuManager {
         this.shopRenderer = new com.alinvite.gui.render.ShopMenuRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
         this.rebateHistoryRenderer = new com.alinvite.gui.render.RebateHistoryRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
         this.adminRebateHistoryRenderer = new com.alinvite.gui.render.AdminRebateHistoryRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
+        this.codesRenderer = new com.alinvite.gui.render.InviteCodesMenuRenderer(plugin, sessions, pages, plugin.getScheduler(), pdc);
     }
 
     public void openAdminRebateHistoryMenu(Player admin, java.util.UUID targetUuid, String targetName) {
@@ -74,6 +76,7 @@ public class MenuManager {
             case MenuNames.VETERAN -> openVeteranMenu(player);
             case MenuNames.SHOP -> openShopMenu(player);
             case MenuNames.REBATE_HISTORY -> openRebateHistoryMenu(player);
+            case MenuNames.CODES -> openInviteCodesMenu(player);
             default -> { }
         }
     }
@@ -89,6 +92,7 @@ public class MenuManager {
         return switch (menuName) {
             case MenuNames.VETERAN -> MenuNames.MAIN;
             case MenuNames.REBATE_HISTORY -> MenuNames.MAIN;
+            case MenuNames.CODES -> MenuNames.MAIN;
             case MenuNames.SHOP -> MenuNames.VETERAN;
             default -> null;
         };
@@ -105,6 +109,18 @@ public class MenuManager {
 
     public void openShopMenu(Player player) {
         shopRenderer.open(player);
+    }
+
+    public void openInviteCodesMenu(Player player) {
+        codesRenderer.open(player);
+    }
+
+    public void refreshInviteCodesMenu(Player player) {
+        codesRenderer.refresh(player);
+    }
+
+    public void shareInviteCode(Player player, String code) {
+        codesRenderer.share(player, code);
     }
 
     /** 翻页：页码先推进再局部重绘（越界由 Pagination 夹取回写）。 */
@@ -125,6 +141,7 @@ public class MenuManager {
         switch (menuName) {
             case MenuNames.VETERAN -> veteranRenderer.refresh(player);
             case MenuNames.SHOP -> shopRenderer.refresh(player);
+            case MenuNames.CODES -> codesRenderer.refresh(player);
             default -> { }
         }
     }

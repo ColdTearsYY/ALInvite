@@ -10,10 +10,10 @@ website: https://github.com/AllenLinong/ALInvite
 load: STARTUP
 
 commands:
-  alinvite:
-    description: ALInvite 主命令
-    usage: /<command> [args]
-    aliases: [ali, invite]
+  travel:
+    description: 邀请系统主命令
+    usage: /travel [args]
+    aliases: [alinvite, ali, invite]
     permission: alinvite.use
 
 permissions:

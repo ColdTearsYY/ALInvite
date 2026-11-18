@@ -42,6 +42,8 @@ ALInviteAPI.getInviteCode(player).thenAccept(code -> {
     }
 });
 ```
+旧接口返回当前第一枚可用码。需要完整库存时，使用 `ALInviteAPI.getAvailableInviteCodes(UUID)`。它返回按发放顺序排列的只读列表，排除已使用、预留和退役的码。
+
 
 #### 检查邀请码有效性
 ```java

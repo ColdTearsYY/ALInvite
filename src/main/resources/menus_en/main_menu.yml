@@ -48,7 +48,8 @@ main_menu:
       name: "&6&lInvite Center"
       lore:
         - "&6▶ &8Invite Overview"
-        - "&e▸ &7Your invite code: &e%invite_code%"
+        - "%invite_codes_summary%"
+        - "%invite_code_preview%"
         - "&a▸ &7Players invited: &e%total_invites%"
         - "&7Committed online time: &e%playtime%"
         - "&7Inventory and next boundary: &f/alinvite status"
@@ -57,9 +58,12 @@ main_menu:
         - ""
         - "&6▶ &8Actions"
         - "&7• &aLeft click &a➤ &fOpen the invite center"
+        - "&7• &aRight click &a➤ &fBrowse all codes and copy to share"
       triggers:
         left:
           - 'open_veteran'
+        right:
+          - 'open_codes'
     X:
       material: 'BARRIER'
       custom_model_data: 0
