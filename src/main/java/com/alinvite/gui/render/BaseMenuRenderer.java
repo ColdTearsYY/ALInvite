@@ -47,6 +47,8 @@ public abstract class BaseMenuRenderer<D> {
     /** 异步阶段（IO 线程，可阻塞缓存加载）：取数并构建数据载荷。 */
     protected abstract D loadData(Player player);
 
+    protected boolean canRender(Player player) { return true; }
+
     /** 实体线程阶段：填充动态区（静态区已由基类按 shape 填好）。 */
     protected abstract void fillDynamic(Player player, MenuConfig config, Inventory inventory, D data, int page);
 
@@ -58,6 +60,7 @@ public abstract class BaseMenuRenderer<D> {
             return;
         }
         MenuSessionStore.Session previous = sessions.get(player.getUniqueId());
+        Object loadToken = sessions.beginLoad(player.getUniqueId());
         scheduler.runAsync(() -> {
             D data;
             try {
@@ -67,7 +70,7 @@ public abstract class BaseMenuRenderer<D> {
                 return;
             }
             scheduler.runAtPlayer(player, () -> {
-                if (!player.isOnline()) {
+                if (!player.isOnline() || !canRender(player) || !sessions.isLatestLoad(player.getUniqueId(), loadToken)) {
                     return;
                 }
                 Inventory inventory = createAndFill(player, config, data, pageOf(player));
@@ -84,6 +87,7 @@ public abstract class BaseMenuRenderer<D> {
             return;
         }
         Inventory inventory = session.inventory();
+        Object loadToken = sessions.beginLoad(player.getUniqueId());
         scheduler.runAsync(() -> {
             D data;
             try {
@@ -93,7 +97,8 @@ public abstract class BaseMenuRenderer<D> {
                 return;
             }
             scheduler.runAtPlayer(player, () -> {
-                if (!player.isOnline() || !sessions.isTracked(player.getUniqueId(), inventory)) {
+                if (!player.isOnline() || !canRender(player) || !sessions.isLatestLoad(player.getUniqueId(), loadToken)
+                        || !sessions.isTracked(player.getUniqueId(), inventory)) {
                     return;
                 }
                 MenuConfig config = plugin.getMenuConfigLoader().get(menuName());
@@ -103,6 +108,15 @@ public abstract class BaseMenuRenderer<D> {
                 fillDynamic(player, config, inventory, data, pageOf(player));
             });
         });
+    }
+
+    protected void renderStatic(Player player, MenuConfig config, Inventory inventory, RenderContext context) {
+        for (var entry : config.getItems().entrySet()) {
+            if (entry.getKey().length() != 1 || entry.getValue().isDynamic()) continue;
+            for (int slot : config.slotsOf(entry.getKey().charAt(0))) {
+                setItemSafe(inventory, slot, MenuItems.build(plugin, pdc, entry.getValue(), null, context));
+            }
+        }
     }
 
     protected void onLoadFailure(Player player, MenuSessionStore.Session expected, RuntimeException error) {

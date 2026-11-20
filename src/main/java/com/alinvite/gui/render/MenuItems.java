@@ -40,6 +40,9 @@ public final class MenuItems {
         String rawName = state != null && state.hasName() ? state.getName() : item.getName();
         String name = MenuText.render(rawName, context);
         List<String> loreSource = state != null && state.hasLore() ? state.getLore() : item.getLore();
+        if (context.strings().containsKey("quota_capacity")) {
+            loreSource = loreSource.stream().filter(line -> !line.matches("(?i).*/(?:alinvite|travel|ali|invite) (?:status|pending|deliveries)\\s*$")).toList();
+        }
         List<String> lore = new java.util.ArrayList<>(MenuText.renderLore(
             InviteCodeMenuSupport.upgradeLore(loreSource, context), context));
         String codesTrigger = context.lists().containsKey("available_invite_codes")
@@ -59,8 +62,13 @@ public final class MenuItems {
                 meta.setCustomModelData(cmd);
             }
             meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-            item.getTriggers().forEach((trigger, actions) ->
-                pdc.write(meta, trigger, MenuText.renderActionList(actions, context)));
+            item.getTriggers().forEach((trigger, actions) -> {
+                var rendered = MenuText.renderActionList(actions, context);
+                if ("true".equals(context.strings().get("bind_complete"))) {
+                    rendered = rendered.stream().filter(action -> !action.replaceFirst("(?i)^action:", "").equalsIgnoreCase("input_code")).toList();
+                }
+                pdc.write(meta, trigger, rendered);
+            });
             if (codesTrigger != null) pdc.write(meta, codesTrigger, List.of("open_codes"));
             stack.setItemMeta(meta);
         }
@@ -100,6 +108,55 @@ public final class MenuItems {
         plugin.getLogger().warning("自定义菜单所有物品的点击方式均已占用，请配置 open_codes 邀请码列表入口。");
     }
 
+    /** Add missing main-menu features without rewriting custom files or replacing configured actions. */
+    public static void ensureMainEntry(ALInvite plugin, ActionPdc pdc, com.alinvite.gui.MenuConfig config,
+                                       org.bukkit.inventory.Inventory inventory, MenuItem entry, RenderContext context) {
+        if (entry == null) return;
+        var gestures = List.of("left", "right", "shift_left", "shift_right");
+        String action = entry.getTriggerActions("left").stream().findFirst().orElse("");
+        if (hasAction(pdc, inventory, action)) return;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            char key = config.getShape().get(slot / 9).charAt(slot % 9);
+            var original = config.getItems().get(String.valueOf(key));
+            ItemStack stack = inventory.getItem(slot);
+            boolean decoration = key == '#' && original != null && original.getName().isBlank()
+                && original.getLore().isEmpty() && original.getCustomModelData() == 0;
+            if (!(key == ' ' && stack == null) && !decoration) continue;
+            if (stack != null && gestures.stream().anyMatch(gesture -> pdc.read(stack.getItemMeta(), gesture) != null)) continue;
+            inventory.setItem(slot, build(plugin, pdc, entry, null, context));
+            return;
+        }
+        // Fully custom layouts can use an unused gesture; never overwrite their existing triggers.
+        for (ItemStack stack : inventory.getContents()) {
+            if (stack == null || !stack.hasItemMeta()) continue;
+            ItemMeta meta = stack.getItemMeta();
+            for (String gesture : gestures) {
+                if (pdc.read(meta, gesture) != null) continue;
+                var lore = new java.util.ArrayList<>(meta.hasLore() ? meta.getLore() : List.<String>of());
+                lore.add(ConfigManager.colorize(plugin.getConfigManager().getMessageRaw("player_menu.gesture." + gesture)
+                    + " → " + entry.getName()));
+                meta.setLore(lore);
+                pdc.write(meta, gesture, List.of(action));
+                stack.setItemMeta(meta);
+                return;
+            }
+        }
+        plugin.getLogger().warning("自定义主菜单无可用入口，请配置菜单动作: " + action);
+    }
+
+    private static boolean hasAction(ActionPdc pdc, org.bukkit.inventory.Inventory inventory, String wanted) {
+        for (ItemStack stack : inventory.getContents()) {
+            if (stack == null || !stack.hasItemMeta()) continue;
+            for (String gesture : List.of("left", "right", "shift_left", "shift_right")) {
+                String encoded = pdc.read(stack.getItemMeta(), gesture);
+                if (encoded == null) continue;
+                if (java.util.Arrays.stream(encoded.split(ActionPdc.SEPARATOR)).map(String::trim)
+                        .map(action -> action.replaceFirst("(?i)^action:", ""))
+                        .anyMatch(action -> action.equalsIgnoreCase(wanted))) return true;
+            }
+        }
+        return false;
+    }
     private static ItemStack createStack(String spec, RenderContext context) {
         if (spec == null || spec.isBlank()) {
             return new ItemStack(Material.STONE);

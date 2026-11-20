@@ -1,0 +1,60 @@
+config_version: 1
+pending_invites:
+  title: "&6&l我的预邀请"
+  shape:
+    - "#A##S####"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "P#H#R#X#N"
+  items:
+    S:
+      material: 'CLOCK'
+      name: "&e&l待处理邀请（%pending_count%）"
+      lore:
+        - "&7最多显示本人的 1000 条预邀请"
+        - "&7新建有效期: %pending_duration%（离线也计时）"
+        - "&7到期或确认取消后退回原邀请码"
+      triggers:
+        left: ['refresh_pending']
+    A:
+      material: WRITABLE_BOOK
+      name: "&a新建预邀请"
+      lore: ["&7为好友预留 1 个邀请码", "&a点击后只需在聊天栏输入游戏名"]
+      triggers: { left: [input_invitee] }
+    M:
+      dynamic: true
+      material: 'PAPER'
+      name: "&e%pending_target%"
+      lore:
+        - "&7预留目标: &f%pending_target%"
+        - "&7剩余有效: &f%pending_remaining%"
+        - "&7到期时间: &f%pending_expiry%"
+        - ""
+        - "&c点击进入取消确认页"
+      triggers: { left: ['cancel_pending:%pending_action%'] }
+    P:
+      material: 'ARROW'
+      name: "&a上一页"
+      lore: ["&7第 %page%/%total_pages% 页"]
+      triggers: { left: ['prev_page'] }
+    N:
+      material: 'ARROW'
+      name: "&a下一页"
+      lore: ["&7第 %page%/%total_pages% 页"]
+      triggers: { left: ['next_page'] }
+    H:
+      material: 'OAK_DOOR'
+      name: "&a返回主菜单"
+      triggers: { left: ['open_main'] }
+    R:
+      material: 'SUNFLOWER'
+      name: "&e刷新"
+      triggers: { left: ['refresh_pending'] }
+    X:
+      material: 'BARRIER'
+      name: "&c关闭"
+      triggers: { left: ['close'] }
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      name: ' '

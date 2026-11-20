@@ -56,12 +56,20 @@ public class MenuActionRegistry {
 
     private void registerDefaults() {
         register("open_main", (player, value) -> plugin.getMenuManager().openMainMenu(player));
+        register("refresh_main", (player, value) -> plugin.getMenuManager().openMainMenu(player));
         register("open_veteran", (player, value) -> plugin.getMenuManager().openVeteranMenu(player));
         register("open_shop", (player, value) -> plugin.getMenuManager().openShopMenu(player));
         register("open_rebate_history", (player, value) -> plugin.getMenuManager().openRebateHistoryMenu(player));
+        register("open_deliveries", (player, value) -> plugin.getMenuManager().openDeliveriesMenu(player));
+        register("refresh_deliveries", (player, value) -> plugin.getMenuManager().refreshDeliveriesMenu(player));
+        register("confirm_cancel_pending", (player, value) -> plugin.getMenuManager().confirmPendingCancellation(player));
+        register("open_pending", (player, value) -> plugin.getMenuManager().openPendingInvitesMenu(player));
+        register("cancel_pending", (player, value) -> plugin.getMenuManager().cancelPendingInvite(player, value));
+        register("input_invitee", (player, value) -> plugin.getMenuManager().getInputService().startInviteeInput(player));
         register("open_codes", (player, value) -> plugin.getMenuManager().openInviteCodesMenu(player));
         register("share_code", (player, value) -> plugin.getMenuManager().shareInviteCode(player, value));
         register("refresh_codes", (player, value) -> plugin.getMenuManager().refreshInviteCodesMenu(player));
+        register("refresh_pending", (player, value) -> plugin.getMenuManager().refreshPendingInvitesMenu(player));
         register("back_veteran", (player, value) -> plugin.getMenuManager().openVeteranMenu(player));
         // back = 按固定层级返回上一级（主菜单 → 邀请中心 → 礼包商店）
         register("back", (player, value) -> {

@@ -1,81 +1,68 @@
-# ALInvite main menu (English)
-# S = rebate center (left: claim pending rebate / right: rebate history), X = close
-
 config_version: 1
-
 main_menu:
-  title: "&6&lInvite System"
+  title: "&6&lInvitations"
   shape:
-    - "####S####"
-    - "#A#####B#"
+    - "####O####"
+    - "#A#C#P#B#"
+    - "#S#H#D#G#"
     - "####X####"
   items:
-    S:
-      material: 'GOLD_INGOT'
-      custom_model_data: 0
-      name: "&6&lRebate Center"
+    O:
+      material: CLOCK
+      name: "&e&lInvite Quota"
       lore:
-        - "&6▶ &8Rebate Overview"
-        - "&e▸ &7Total rebates: &e%total_rebate% points"
-        - "&a▸ &7Unclaimed: &a%unclaimed_rebate% points"
-        - "&6▸ &7Your rebate rate: &e%rebate_rate%"
-        - ""
-        - "&6▶ &8Actions"
-        - "&7• &aLeft click &a➤ &fClaim pending rebates"
-        - "&7• &eRight click &e➤ &fView rebate history"
-      triggers:
-        left:
-          - 'claim_rebate'
-        right:
-          - 'open_rebate_history'
+        - "&7Available &a%invite_available_count% &7| Reserved &e%quota_reserved% &7| Capacity &f%quota_capacity%"
+        - "&7Playtime &e%playtime% &7| Group &f%quota_group%"
+        - "%quota_progress%"
+        - "%quota_notice%"
+        - "&aClick to refresh"
+      triggers: { left: [refresh_main] }
     A:
-      material: 'WRITABLE_BOOK'
-      custom_model_data: 0
-      name: "&a&lEnter Invite Code"
+      material: WRITABLE_BOOK
+      name: "%bind_title%"
       lore:
-        - "&6▶ &8Invite Code"
-        - "&e▸ &7Bind status: &f%bind_status%"
-        - "&a▸ &7Inviter: &f%inviter_name%"
-        - ""
-        - "&6▶ &8Actions"
-        - "&7• &aLeft click &a➤ &fEnter an invite code to bind"
-      triggers:
-        left:
-          - 'input_code'
+        - "&7Status &f%bind_status% &7| Invited by &f%inviter_name%"
+        - "%bind_hint%"
+      triggers: { left: [input_code] }
+    C:
+      material: PAPER
+      name: "&aMy Invite Codes"
+      lore: ["&7Available &a%invite_available_count%", "&aClick to view, copy and share"]
+      triggers: { left: [open_codes] }
+    P:
+      material: CLOCK
+      name: "&eMy Pending Invites"
+      lore: ["&7See invitees and expiry times", "&aClick to create or manage invites"]
+      triggers: { left: [open_pending] }
     B:
-      material: 'DIAMOND'
-      custom_model_data: 0
-      name: "&6&lInvite Center"
-      lore:
-        - "&6▶ &8Invite Overview"
-        - "%invite_codes_summary%"
-        - "%invite_code_preview%"
-        - "&a▸ &7Players invited: &e%total_invites%"
-        - "&7Committed online time: &e%playtime%"
-        - "&7Inventory and next boundary: &f/alinvite status"
-        - "&7Pre-invites default to 20 hours: &f/alinvite pending"
-        - "&7Delivery status: &f/alinvite deliveries"
-        - ""
-        - "&6▶ &8Actions"
-        - "&7• &aLeft click &a➤ &fOpen the invite center"
-        - "&7• &aRight click &a➤ &fBrowse all codes and copy to share"
-      triggers:
-        left:
-          - 'open_veteran'
-        right:
-          - 'open_codes'
+      material: DIAMOND
+      name: "&bInvite Milestones"
+      lore: ["&7Players invited &e%total_invites%", "&7Next milestone &e%next_milestone%", "&aClick to view and claim"]
+      triggers: { left: [open_veteran] }
+    S:
+      material: GOLD_INGOT
+      name: "&6Claim Recharge Rebate"
+      lore: ["&7Total &e%total_rebate% &7| Unclaimed &a%unclaimed_rebate%", "&7Current rate &e%rebate_rate%", "%contribution_info%", "&aClick to claim"]
+      triggers: { left: [claim_rebate], right: [open_rebate_history] }
+    H:
+      material: BOOK
+      name: "&6Rebate History"
+      lore: ["&7View rebate credits and claims"]
+      triggers: { left: [open_rebate_history] }
+    D:
+      material: EXPERIENCE_BOTTLE
+      name: "&bReward Delivery History"
+      lore: ["&7View your rewards and whitelist registration status"]
+      triggers: { left: [open_deliveries] }
+    G:
+      material: CHEST
+      name: "&bGift Shop"
+      lore: ["&7Current gift &f%gift_name%", "&aClick to buy or switch gifts"]
+      triggers: { left: [open_shop] }
     X:
-      material: 'BARRIER'
-      custom_model_data: 0
+      material: BARRIER
       name: "&cClose"
-      lore:
-        - "&6▶ &8Actions"
-        - "&7• &aLeft click &a➤ &fClose the menu"
-      triggers:
-        left:
-          - 'close'
-
+      triggers: { left: [close] }
     "#":
-      material: 'BLACK_STAINED_GLASS_PANE'
-      custom_model_data: 0
+      material: BLACK_STAINED_GLASS_PANE
       name: ' '

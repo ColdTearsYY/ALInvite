@@ -23,11 +23,13 @@ import java.util.Map;
 public class MenuConfigLoader {
 
     public static final int CONFIG_VERSION = 1;
-    public static final List<String> DEFAULT_MENUS = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP, MenuNames.REBATE_HISTORY, MenuNames.ADMIN_REBATE_HISTORY, MenuNames.CODES);
+    public static final List<String> DEFAULT_MENUS = List.of(MenuNames.MAIN, MenuNames.VETERAN, MenuNames.SHOP,
+        MenuNames.REBATE_HISTORY, MenuNames.ADMIN_REBATE_HISTORY, MenuNames.CODES, MenuNames.PENDING, MenuNames.DELIVERIES);
     private static final List<String> LEGACY_MENU_KEYS = List.of("main_menu", "veteran_menu", "shop_menu");
 
     private final ALInvite plugin;
     private volatile Map<String, MenuConfig> menus = Map.of();
+    private volatile MenuConfig builtinMainMenu;
     private volatile YamlConfiguration mergedRaw = new YamlConfiguration();
 
     public MenuConfigLoader(ALInvite plugin) {
@@ -35,6 +37,7 @@ public class MenuConfigLoader {
     }
 
     public void loadAll() {
+        this.builtinMainMenu = builtin(MenuNames.MAIN);
         this.menus = Map.copyOf(loadFromDisk());
         YamlConfiguration merged = new YamlConfiguration();
         for (MenuConfig config : menus.values()) {
@@ -53,6 +56,16 @@ public class MenuConfigLoader {
 
     public Map<String, MenuConfig> getAll() {
         return menus;
+    }
+
+    public MenuConfig getBuiltinMainMenu() { return builtinMainMenu; }
+
+    private MenuConfig builtin(String name) {
+        YamlConfiguration resource = loadBuiltinResource(menuDir() + "/" + name + ".yml");
+        if (resource == null) return null;
+        MenuConfig menu = parseMenu(name, resource);
+        menu.freeze();
+        return menu;
     }
 
     /** 供 PAPI 扫描等工具使用：所有菜单合并后的原始配置。 */

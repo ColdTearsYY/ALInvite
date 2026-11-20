@@ -162,7 +162,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.getConfigManager().getMessage("errors.player_only"));
             return;
         }
-        if (!player.hasPermission("alinvite.use") || plugin.getBindingGateManager().isLocked(player.getUniqueId())) {
+        if (args.length < 2 && (!player.hasPermission("alinvite.use") || plugin.getBindingGateManager().isLocked(player.getUniqueId()))) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.no_permission", player));
             return;
         }
@@ -170,18 +170,31 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.usage", player));
             return;
         }
-        String targetName = args[1].trim();
+        createPreInvite(player, args[1], false, () -> {});
+    }
+
+    /** Shared by the command and menu input. Call on the inviter's entity thread. */
+    public void createPreInvite(Player player, String name, boolean fromMenu, Runnable afterReply) {
+        if (!player.hasPermission("alinvite.use") || plugin.getBindingGateManager().isLocked(player.getUniqueId())) {
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.add.no_permission", player));
+            afterReply.run();
+            return;
+        }
+        String targetName = name.trim();
         if (!targetName.matches("[A-Za-z0-9_]{3,16}")) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.invalid_name", player));
+            afterReply.run();
             return;
         }
         if (targetName.equalsIgnoreCase(player.getName())) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.self", player));
+            afterReply.run();
             return;
         }
         Player onlineTarget = Bukkit.getPlayerExact(targetName);
         if (onlineTarget != null && !plugin.getBindingGateManager().canAcceptLiveInvite(onlineTarget.getUniqueId())) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player));
+            afterReply.run();
             return;
         }
         String normalizedName = targetName.toLowerCase(java.util.Locale.ROOT);
@@ -189,6 +202,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             ? null : player.getAddress().getAddress().getHostAddress();
         if (inviterIp == null) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.add.failed", player));
+            afterReply.run();
             return;
         }
 
@@ -198,8 +212,10 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         settled.thenCompose(ignored -> plugin.getDatabaseManager().findBoundPlayerByName(normalizedName))
             .thenCompose(boundUuid -> {
             if (boundUuid != null) {
-                plugin.getScheduler().runAtPlayer(player, () ->
-                    player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player)));
+                plugin.getScheduler().runAtPlayer(player, () -> {
+                    player.sendMessage(plugin.getConfigManager().getMessage("commands.add.already_joined", player));
+                    afterReply.run();
+                });
                 return CompletableFuture.completedFuture(null);
             }
             return plugin.getDatabaseManager().reserveInviteForName(
@@ -213,7 +229,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 })
                 .thenAccept(result -> plugin.getScheduler().runAtPlayer(player, () -> {
                     String path = switch (result.status()) {
-                        case SUCCESS -> "commands.add.success";
+                        case SUCCESS -> fromMenu ? "pending_menu.created" : "commands.add.success";
                         case ALREADY_RESERVED -> "commands.add.already_reserved";
                         case QUOTA_EXHAUSTED -> "commands.add.quota_exhausted";
                         case INVITER_LIMIT_REACHED -> "commands.add.inviter_limit_reached";
@@ -223,11 +239,14 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                         .replace("{player}", targetName)
                         .replace("{remaining}", String.valueOf(result.remainingSlots()));
                     player.sendMessage(message);
+                    afterReply.run();
                 }));
         }).exceptionally(error -> {
             plugin.getLogger().warning("预邀请结算失败，保留库存: " + error.getMessage());
-            plugin.getScheduler().runAtPlayer(player, () ->
-                player.sendMessage(plugin.getConfigManager().getMessage("commands.add.failed", player)));
+            plugin.getScheduler().runAtPlayer(player, () -> {
+                player.sendMessage(plugin.getConfigManager().getMessage("commands.add.failed", player));
+                afterReply.run();
+            });
             return null;
         });
     }

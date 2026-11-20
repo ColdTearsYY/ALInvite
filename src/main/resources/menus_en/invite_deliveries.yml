@@ -1,0 +1,44 @@
+config_version: 1
+invite_deliveries:
+  title: "&6&lReward Delivery History"
+  shape:
+    - "####S####"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "P#H#R#X#N"
+  items:
+    S:
+      material: EXPERIENCE_BOTTLE
+      name: "&eYour Latest 100 Records"
+      lore: ["&7Contact staff about records awaiting review."]
+    M:
+      dynamic: true
+      material: PAPER
+      name: "&f%delivery_kind%"
+      lore: ["&7Status %delivery_state%", "&7Updated &f%delivery_time%"]
+    P:
+      material: ARROW
+      name: "&aPrevious Page"
+      lore: ["&7Page %page%/%total_pages%"]
+      triggers: { left: [prev_page] }
+    N:
+      material: ARROW
+      name: "&aNext Page"
+      lore: ["&7Page %page%/%total_pages%"]
+      triggers: { left: [next_page] }
+    H:
+      material: OAK_DOOR
+      name: "&aMain Menu"
+      triggers: { left: [open_main] }
+    R:
+      material: SUNFLOWER
+      name: "&eRefresh"
+      triggers: { left: [refresh_deliveries] }
+    X:
+      material: BARRIER
+      name: "&cClose"
+      triggers: { left: [close] }
+    "#":
+      material: BLACK_STAINED_GLASS_PANE
+      name: ' '

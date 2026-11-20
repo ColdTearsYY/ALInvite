@@ -127,6 +127,7 @@ public class MenuClickListener implements Listener {
             return;
         }
         menuManager.getSessions().clear(player.getUniqueId(), event.getInventory());
+        menuManager.clearPendingCancellation(player.getUniqueId(), event.getInventory());
         cooldowns.clear(player.getUniqueId());
     }
 
@@ -136,6 +137,7 @@ public class MenuClickListener implements Listener {
         menuManager.getSessions().clearAll(player.getUniqueId());
         menuManager.getPages().clear(player.getUniqueId());
         menuManager.clearAdminRebateState(player.getUniqueId());
+        menuManager.clearPendingCancellation(player.getUniqueId());
         cooldowns.clear(player.getUniqueId());
     }
 

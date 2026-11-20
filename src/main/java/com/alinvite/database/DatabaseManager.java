@@ -474,6 +474,21 @@ public class DatabaseManager {
         return null;
     }
 
+    public String findBoundDisplayNameSync(UUID uuid) {
+        String sql = "SELECT display_name FROM " + tablePrefix
+            + "bound_player_names WHERE player_uuid = ? ORDER BY updated_at DESC, name_lower LIMIT 1";
+        try (Connection conn = getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, uuid.toString());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().warning("读取邀请人名字失败: " + e.getMessage());
+            return null;
+        }
+    }
+
+
     /**
      * records.invitee_uuid 唯一索引：跨服/并发环境下防止同一玩家邀请被重复计数。
      * 幂等创建；若历史数据存在重复导致创建失败，仅警告（插件继续以非唯一索引运行）。
@@ -1226,6 +1241,17 @@ public class DatabaseManager {
         });
     }
 
+    public CompletableFuture<Boolean> releasePendingInvite(com.alinvite.database.ledger.AtomicInviteLedger.Pending expected) {
+        return AsyncPool.supply(() -> {
+            boolean released = atomicLedger.release(expected);
+            if (released) {
+                notifyChange(expected.inviterUuid(), "stats");
+                notifyChange(expected.inviterUuid(), "invitecode");
+            }
+            return released;
+        });
+    }
+
     public CompletableFuture<Boolean> cancelPendingInvite(String target, UUID ownerOrNull) {
         return AsyncPool.supply(() -> {
             var row = atomicLedger.getPending(target);
@@ -1245,12 +1271,13 @@ public class DatabaseManager {
             notifyChange(owner, "stats"); notifyChange(owner, "invitecode");
         }
     }
-
     public CompletableFuture<com.alinvite.manager.QuotaStatus> getQuotaStatus(UUID uuid) {
-        return AsyncPool.supply(() -> {
-            var manager = plugin.getInviteQuotaManager();
-            return com.alinvite.manager.QuotaStatus.from(atomicLedger.inventory(uuid), manager.rules(), manager.isEnabled());
-        });
+        return AsyncPool.supply(() -> getQuotaStatusSync(uuid));
+    }
+
+    public com.alinvite.manager.QuotaStatus getQuotaStatusSync(UUID uuid) {
+        var manager = plugin.getInviteQuotaManager();
+        return com.alinvite.manager.QuotaStatus.from(atomicLedger.inventory(uuid), manager.rules(), manager.isEnabled());
     }
 
     public record RegistrationPoolState(boolean open, int slotsRemaining, int totalSlots,

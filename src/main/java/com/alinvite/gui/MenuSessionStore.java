@@ -15,6 +15,14 @@ public class MenuSessionStore {
 
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
+    private final Map<UUID, Object> loads = new ConcurrentHashMap<>();
+    public Object beginLoad(UUID player) {
+        Object token = new Object();
+        loads.put(player, token);
+        return token;
+    }
+    public boolean isLatestLoad(UUID player, Object token) { return loads.get(player) == token; }
+
     public void track(UUID playerId, String menuName, Inventory inventory) {
         sessions.put(playerId, new Session(menuName, inventory));
     }
@@ -46,22 +54,27 @@ public class MenuSessionStore {
      */
     public void clear(UUID playerId) {
         sessions.remove(playerId);
+        loads.remove(playerId);
     }
 
     public void clearAll(UUID playerId) {
         sessions.remove(playerId);
+        loads.remove(playerId);
     }
 
     public boolean clear(UUID playerId, Inventory inventory) {
         Session session = sessions.get(playerId);
         if (session != null && session.inventory() == inventory) {
-            return sessions.remove(playerId, session);
+            boolean removed = sessions.remove(playerId, session);
+            if (removed) loads.remove(playerId);
+            return removed;
         }
         return false;
     }
 
     public void clearAll() {
         sessions.clear();
+        loads.clear();
     }
 
     public record Session(String menuName, Inventory inventory) {

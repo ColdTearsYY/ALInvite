@@ -32,8 +32,10 @@ public final class MenuText {
             "price_money", "price_points", "duration_text", "duration_days",
             "unclaimed_rebate", "rebate_rate", "view_name", "toggle_target",
             "record_time", "record_text", "record_source", "record_value",
+            "quota_group", "quota_reserved", "quota_capacity", "quota_progress", "quota_notice", "bind_hint", "bind_title", "bind_complete", "contribution_info",
+            "pending_target", "pending_remaining", "pending_expiry", "pending_action", "pending_count", "pending_duration",
+            "delivery_kind", "delivery_state", "delivery_time", "playtime",
             "reward_lore");
-
     private static final Pattern PLACEHOLDER = Pattern.compile("%([a-z0-9_]+)%");
     private static final Pattern INDEXED_REWARD = Pattern.compile("\\{reward_lore_(\\d+)\\}");
 
@@ -116,7 +118,7 @@ public final class MenuText {
                     }
                     continue;
                 }
-                if (INTERNAL_KEYS.contains(bareKey)) {
+                if (INTERNAL_KEYS.contains(bareKey) && !context.strings().containsKey(bareKey)) {
                     continue;
                 }
             }

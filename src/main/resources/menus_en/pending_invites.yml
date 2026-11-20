@@ -1,0 +1,60 @@
+config_version: 1
+pending_invites:
+  title: "&6&lMy Pending Invites"
+  shape:
+    - "#A##S####"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "P#H#R#X#N"
+  items:
+    S:
+      material: 'CLOCK'
+      name: "&e&lPending Invites (%pending_count%)"
+      lore:
+        - "&7Up to 1000 of your pending invites"
+        - "&7New invite expiry: %pending_duration% (includes offline time)"
+        - "&7Expiry or confirmed cancellation returns the exact code"
+      triggers:
+        left: ['refresh_pending']
+    A:
+      material: WRITABLE_BOOK
+      name: "&aCreate a Pending Invite"
+      lore: ["&7Reserve one code for a friend", "&aClick, then type only their Minecraft name in chat"]
+      triggers: { left: [input_invitee] }
+    M:
+      dynamic: true
+      material: 'PAPER'
+      name: "&e%pending_target%"
+      lore:
+        - "&7Reserved for: &f%pending_target%"
+        - "&7Time left: &f%pending_remaining%"
+        - "&7Expires: &f%pending_expiry%"
+        - ""
+        - "&cClick to review cancellation"
+      triggers: { left: ['cancel_pending:%pending_action%'] }
+    P:
+      material: 'ARROW'
+      name: "&aPrevious Page"
+      lore: ["&7Page %page%/%total_pages%"]
+      triggers: { left: ['prev_page'] }
+    N:
+      material: 'ARROW'
+      name: "&aNext Page"
+      lore: ["&7Page %page%/%total_pages%"]
+      triggers: { left: ['next_page'] }
+    H:
+      material: 'OAK_DOOR'
+      name: "&aMain Menu"
+      triggers: { left: ['open_main'] }
+    R:
+      material: 'SUNFLOWER'
+      name: "&eRefresh"
+      triggers: { left: ['refresh_pending'] }
+    X:
+      material: 'BARRIER'
+      name: "&cClose"
+      triggers: { left: ['close'] }
+    "#":
+      material: 'BLACK_STAINED_GLASS_PANE'
+      name: ' '

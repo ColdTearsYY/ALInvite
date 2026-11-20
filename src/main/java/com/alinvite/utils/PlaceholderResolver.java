@@ -40,6 +40,10 @@ public class PlaceholderResolver {
 
     /** 仅在 IO 线程调用（AsyncPool / scheduler.runAsync 内部）。 */
     public RenderContext renderContext(Player player) {
+        return renderContext(player, true);
+    }
+
+    public RenderContext renderContext(Player player, boolean includeRate) {
         RenderContext context = new RenderContext(player);
         com.alinvite.gui.render.InviteCodeMenuSupport.populate(context,
             plugin.getDatabaseManager().listAvailableCodesSync(player.getUniqueId()),
@@ -55,7 +59,7 @@ public class PlaceholderResolver {
         context.add("total_rebate", getTotalRebateSync(player.getUniqueId()));
         context.add("contribution", getContributionSync(player.getUniqueId()));
         context.add("unclaimed_rebate", formatAmount(plugin.getDatabaseManager().getUnclaimedRebateSync(player.getUniqueId())));
-        context.add("rebate_rate", plugin.getPointsRebateManager().getRebateRateDisplay(player));
+        if (includeRate) context.add("rebate_rate", plugin.getPointsRebateManager().getRebateRateDisplay(player));
         for (String key : java.util.List.of("playtime", "playtime_seconds", "playtime_minutes", "playtime_hours")) {
             context.add(key, plugin.getPlaytimeManager().placeholder(player.getUniqueId(), key));
         }
@@ -99,23 +103,17 @@ public class PlaceholderResolver {
 
     public String getBindStatusSync(UUID uuid) {
         UUID inviter = plugin.getCacheManager().getInviter(uuid, plugin.getDatabaseManager()::getInviterSync);
-        return inviter != null ? "已绑定" : "未绑定";
+        return plugin.getConfigManager().getMessageRaw(inviter != null ? "player_menu.bound" : "player_menu.unbound");
     }
 
     public String getInviterNameSync(UUID uuid) {
         UUID inviter = plugin.getCacheManager().getInviter(uuid, plugin.getDatabaseManager()::getInviterSync);
-        if (inviter == null) {
-            return "无";
-        }
-        var data = plugin.getDatabaseManager().getPlayerDataSync(inviter);
-        if (data == null) {
-            return "无";
-        }
-        Player onlineInviter = plugin.getServer().getPlayer(inviter);
-        if (onlineInviter != null && onlineInviter.isOnline()) {
-            return onlineInviter.getName();
-        }
-        return data.inviteCode != null && !data.inviteCode.isEmpty() ? data.inviteCode : "未知";
+        if (inviter == null) return plugin.getConfigManager().getMessageRaw("player_menu.no_inviter");
+        Player online = plugin.getServer().getPlayer(inviter);
+        if (online != null) return online.getName();
+        String name = plugin.getDatabaseManager().findBoundDisplayNameSync(inviter);
+        if (name == null) name = Bukkit.getOfflinePlayer(inviter).getName();
+        return name != null ? name : plugin.getConfigManager().getMessageRaw("player_menu.unknown_inviter");
     }
 
     public String getTotalInvitesSync(UUID uuid) {

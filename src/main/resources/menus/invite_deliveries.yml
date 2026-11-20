@@ -1,0 +1,44 @@
+config_version: 1
+invite_deliveries:
+  title: "&6&l奖励处理记录"
+  shape:
+    - "####S####"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "#MMMMMMM#"
+    - "P#H#R#X#N"
+  items:
+    S:
+      material: EXPERIENCE_BOTTLE
+      name: "&e最近 100 条本人记录"
+      lore: ["&7等待管理核对的记录，请联系服管。"]
+    M:
+      dynamic: true
+      material: PAPER
+      name: "&f%delivery_kind%"
+      lore: ["&7状态 %delivery_state%", "&7更新于 &f%delivery_time%"]
+    P:
+      material: ARROW
+      name: "&a上一页"
+      lore: ["&7第 %page%/%total_pages% 页"]
+      triggers: { left: [prev_page] }
+    N:
+      material: ARROW
+      name: "&a下一页"
+      lore: ["&7第 %page%/%total_pages% 页"]
+      triggers: { left: [next_page] }
+    H:
+      material: OAK_DOOR
+      name: "&a返回主菜单"
+      triggers: { left: [open_main] }
+    R:
+      material: SUNFLOWER
+      name: "&e刷新"
+      triggers: { left: [refresh_deliveries] }
+    X:
+      material: BARRIER
+      name: "&c关闭"
+      triggers: { left: [close] }
+    "#":
+      material: BLACK_STAINED_GLASS_PANE
+      name: ' '
