@@ -23,6 +23,8 @@ public class AutoVeteranManager {
     private double requiredHours;   // 转换后的需求小时数
     private long checkInterval;
     private String grantCommand;
+    static final String DEFAULT_NOTIFY_MESSAGE = "&a已获得老玩家资格。邀请码仍按所在组的累计在线规则发放，可在主菜单查看进度。";
+    static final String LEGACY_INVITE_UNLOCK_MESSAGE = "&a恭喜！您的在线时间已达到要求，现在可以生成邀请码邀请新玩家了！";
 
     public AutoVeteranManager(ALInvite plugin) {
         this.plugin = plugin;
@@ -180,9 +182,9 @@ public class AutoVeteranManager {
                 // 通知玩家
                 String veteranPerm = plugin.getConfigManager().getConfig()
                         .getString("invite_code.veteran_permission", "alinvite.veteran");
-                String notifyMsg = plugin.getConfigManager().getConfig()
-                        .getString("auto_veteran.notify_message",
-                                "&a恭喜！您的在线时间已达到要求，现在可以生成邀请码邀请新玩家了！");
+                String configuredNotify = plugin.getConfigManager().getConfig()
+                        .getString("auto_veteran.notify_message", DEFAULT_NOTIFY_MESSAGE);
+                String notifyMsg = resolveNotifyMessage(configuredNotify);
                 if (notifyMsg != null && !notifyMsg.isEmpty()) {
                     plugin.getScheduler().runAtPlayer(player, () ->
                         player.sendMessage(ConfigManager.colorize(notifyMsg, player)));
@@ -196,6 +198,9 @@ public class AutoVeteranManager {
         });
     }
 
+    static String resolveNotifyMessage(String configured) {
+        return LEGACY_INVITE_UNLOCK_MESSAGE.equals(configured) ? DEFAULT_NOTIFY_MESSAGE : configured;
+    }
 
     /**
      * 玩家加入时检查
