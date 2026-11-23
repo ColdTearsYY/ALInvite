@@ -297,6 +297,51 @@ class InviteLedgerDaoTest {
     }
 
     @Test
+    void upgradeSettlesReachedFasterRuleBoundaryFromAccumulatedPlaytime() {
+        UUID player = UUID.randomUUID();
+        insertFreshPlayer(player);
+        markRegistered(player);
+
+        InviteLedgerDao.TickResult defaultRule = dao.applyQuotaTick(player, 39.0, DEFAULT_RULE, k -> DEFAULT_RULE);
+        assertEquals(0, defaultRule.granted());
+        assertEquals(1, defaultRule.nextBoundary());
+
+        InviteLedgerDao.TickResult upgrade = dao.applyQuotaTick(player, 39.0, VIP_RULE,
+            key -> key.startsWith("default") ? DEFAULT_RULE : VIP_RULE);
+        assertEquals(1, upgrade.granted());
+        assertEquals(1, upgrade.available());
+        assertEquals(2, upgrade.nextBoundary());
+
+        assertEquals(0, dao.applyQuotaTick(player, 47.999, VIP_RULE, k -> VIP_RULE).granted());
+        InviteLedgerDao.TickResult secondBoundary = dao.applyQuotaTick(player, 48.0, VIP_RULE, k -> VIP_RULE);
+        assertEquals(1, secondBoundary.granted());
+        assertEquals(2, secondBoundary.available());
+        assertEquals(3, secondBoundary.nextBoundary());
+
+        InviteLedgerDao.TickResult full = dao.applyQuotaTick(player, 72.0, VIP_RULE, k -> VIP_RULE);
+        assertEquals(0, full.granted());
+        assertEquals(4, full.nextBoundary());
+    }
+
+    @Test
+    void upgradeDoesNotReplayFasterRuleBoundariesBelowPreviousSettledWatermark() {
+        UUID player = UUID.randomUUID();
+        insertFreshPlayer(player);
+        markRegistered(player);
+
+        assertEquals(1, dao.applyQuotaTick(player, 48.0, DEFAULT_RULE, k -> DEFAULT_RULE).granted());
+        InviteLedgerDao.TickResult upgrade = dao.applyQuotaTick(player, 50.0, VIP_RULE,
+            key -> key.startsWith("default") ? DEFAULT_RULE : VIP_RULE);
+        assertEquals(0, upgrade.granted());
+        assertEquals(1, upgrade.available());
+        assertEquals(3, upgrade.nextBoundary());
+
+        InviteLedgerDao.TickResult nextUnsettled = dao.applyQuotaTick(player, 72.0, VIP_RULE, k -> VIP_RULE);
+        assertEquals(1, nextUnsettled.granted());
+        assertEquals(2, nextUnsettled.available());
+    }
+
+    @Test
     void downgradeKeepsCodesAndReupgradeReplaysNothing() {
         UUID player = UUID.randomUUID();
         insertFreshPlayer(player);
@@ -305,7 +350,7 @@ class InviteLedgerDaoTest {
         dao.migrateLegacy(player, VIP_RULE, 48.0);
         assertEquals(2, dao.applyQuotaTick(player, 48.0, VIP_RULE, k -> VIP_RULE).granted());
 
-        // vip1 -> default at 50h: the 2 codes stay, the new policy is baselined at 50h.
+        // vip1 -> default at 50h: preserve codes, and continue after the last settled 48h node.
         InviteLedgerDao.TickResult downgrade = dao.applyQuotaTick(player, 50.0, DEFAULT_RULE,
             key -> key.startsWith("vip1") ? VIP_RULE : DEFAULT_RULE);
         assertEquals(0, downgrade.granted());
@@ -320,6 +365,77 @@ class InviteLedgerDaoTest {
             key -> key.startsWith("vip1") ? VIP_RULE : DEFAULT_RULE);
         assertEquals(0, reupgrade.granted());
         assertEquals(2, dao.listAvailable(player).size());
+    }
+
+    @Test
+    void settledFasterBoundarySurvivesDowngradeAndReupgradeAfterCodeUse() {
+        UUID player = UUID.randomUUID();
+        insertFreshPlayer(player);
+        markRegistered(player);
+
+        assertEquals(0, dao.applyQuotaTick(player, 40.0, DEFAULT_RULE, k -> DEFAULT_RULE).granted());
+        assertEquals(1, dao.applyQuotaTick(player, 40.0, VIP_RULE,
+            key -> key.startsWith("default") ? DEFAULT_RULE : VIP_RULE).granted());
+        String firstCode = dao.listAvailable(player).get(0);
+        assertEquals(InviteLedgerDao.BindStatus.SUCCESS,
+            bind(player, UUID.randomUUID(), firstCode, "10.5.0.1").status);
+
+        InviteLedgerDao.TickResult downgrade = dao.applyQuotaTick(player, 40.0, DEFAULT_RULE,
+            key -> key.startsWith("vip1") ? VIP_RULE : DEFAULT_RULE);
+        assertEquals(0, downgrade.granted());
+
+        InviteLedgerDao.TickResult reupgrade = dao.applyQuotaTick(player, 40.0, VIP_RULE,
+            key -> key.startsWith("default") ? DEFAULT_RULE : VIP_RULE);
+        assertEquals(0, reupgrade.granted(), "the settled 24h node must never be replayed");
+        assertEquals(2, reupgrade.nextBoundary());
+
+        InviteLedgerDao.TickResult at48 = dao.applyQuotaTick(player, 48.0, VIP_RULE, k -> VIP_RULE);
+        assertEquals(1, at48.granted(), "the next eligible VIP node is at 48 cumulative hours");
+        assertEquals(1, at48.available());
+    }
+
+    @Test
+    void fullVipBoundariesRemainSkippedAcrossDowngradeAndReupgrade() {
+        UUID player = UUID.randomUUID();
+        insertFreshPlayer(player);
+        markRegistered(player);
+
+        dao.migrateLegacy(player, VIP_RULE, 0.0);
+        assertEquals(2, dao.applyQuotaTick(player, 48.0, VIP_RULE, k -> VIP_RULE).granted());
+        InviteLedgerDao.TickResult full = dao.applyQuotaTick(player, 72.0, VIP_RULE, k -> VIP_RULE);
+        assertEquals(0, full.granted());
+        assertEquals(4, full.nextBoundary());
+
+        String code = dao.listAvailable(player).get(0);
+        assertEquals(InviteLedgerDao.BindStatus.SUCCESS,
+            bind(player, UUID.randomUUID(), code, "10.5.0.2").status);
+        dao.applyQuotaTick(player, 72.0, DEFAULT_RULE,
+            key -> key.startsWith("vip1") ? VIP_RULE : DEFAULT_RULE);
+        InviteLedgerDao.TickResult reupgrade = dao.applyQuotaTick(player, 72.0, VIP_RULE,
+            key -> key.startsWith("default") ? DEFAULT_RULE : VIP_RULE);
+        assertEquals(0, reupgrade.granted(), "the skipped 72h boundary must not return as inventory frees");
+        assertEquals(4, reupgrade.nextBoundary());
+        assertEquals(1, reupgrade.available());
+    }
+
+    @Test
+    void nonDividingIntervalsKeepTheExactSettledWatermarkAcrossPolicyChanges() {
+        UUID player = UUID.randomUUID();
+        insertFreshPlayer(player);
+        markRegistered(player);
+        QuotaRule oldRule = QuotaRule.recurring("old", 1.5, 10, 0);
+        QuotaRule slower = QuotaRule.recurring("slower", 2.0, 10, 1);
+        QuotaRule faster = QuotaRule.recurring("faster", 0.5, 10, 2);
+
+        assertEquals(1, dao.applyQuotaTick(player, 1.5, oldRule, k -> oldRule).granted());
+        assertEquals(0, dao.applyQuotaTick(player, 1.5, slower,
+            key -> key.startsWith("old") ? oldRule : slower).granted());
+        InviteLedgerDao.TickResult fasterSwitch = dao.applyQuotaTick(player, 1.5, faster,
+            key -> key.startsWith("slower") ? slower : faster);
+        assertEquals(0, fasterSwitch.granted(), "the 90-minute node was already settled");
+        assertEquals(4, fasterSwitch.nextBoundary());
+
+        assertEquals(1, dao.applyQuotaTick(player, 2.0, faster, k -> faster).granted());
     }
 
     // ───────────────────────── concurrency ─────────────────────────

@@ -76,8 +76,9 @@ public final class InviteQuotaPolicy {
     }
 
     /**
-     * Next boundary that may be granted when a policy is first attached to a player:
-     * the current boundary plus one, so already-earned history is never replayed.
+     * First 1-based boundary strictly after the supplied cumulative-time watermark. Policy switches
+     * pass the previous rule's last settled boundary, allowing newly eligible faster-rule nodes
+     * while preventing a boundary already credited under the previous rule from being replayed.
      */
     public static int firstGrantableBoundary(double playtimeHours, double hoursPerSlot) {
         int current = boundaryIndex(playtimeHours, hoursPerSlot);

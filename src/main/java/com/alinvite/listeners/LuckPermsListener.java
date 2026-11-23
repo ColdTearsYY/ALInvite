@@ -79,7 +79,7 @@ public class LuckPermsListener implements Listener {
                     if (player != null) {
                         plugin.getScheduler().runAtPlayer(player, () -> {
                             rewardListener.checkOnlinePlayerPermissionGroup(player);
-                            // 组变化立即结算一次配额（旧的规则先结算，再按新规则建立基线）。
+                            // Group changes settle reached nodes under the new rule beyond the last old-rule watermark.
                             if (plugin.getInviteQuotaManager() != null) {
                                 plugin.getInviteQuotaManager().tickPlayer(player);
                             }

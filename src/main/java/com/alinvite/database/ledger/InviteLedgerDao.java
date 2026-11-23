@@ -171,7 +171,7 @@ public final class InviteLedgerDao {
     }
 
     private record PlayerRow(int totalInvites, int slots, String policyKey, int nextBoundary,
-                             long highWaterMinutes, boolean legacyMigrated,
+                             long highWaterMinutes, long settledThroughMinutes, boolean legacyMigrated,
                              String legacyCode, boolean personalCodeReady,
                              int legacyPeriodsGranted, String legacyBoundInviteCode) {
     }
@@ -295,6 +295,7 @@ public final class InviteLedgerDao {
             "invite_codes", "reserved_target");
         addColumnIfMissing("players", "quota_policy_key", "VARCHAR(64)");
         addColumnIfMissing("players", "quota_next_boundary", "INT NOT NULL DEFAULT -1");
+        addColumnIfMissing("players", "quota_settled_through_minutes", "BIGINT NOT NULL DEFAULT 0");
         addColumnIfMissing("players", "quota_high_water_minutes", "BIGINT NOT NULL DEFAULT 0");
         addColumnIfMissing("players", "quota_legacy_migrated", "INT NOT NULL DEFAULT 0");
         addColumnIfMissing("pending_invites", "reserved_code", "VARCHAR(32)");
@@ -840,9 +841,11 @@ public final class InviteLedgerDao {
      * Advances the persisted quota watermark for one player and mints every code the player has
      * earned since the last tick.
      *
-     * <p>Skipped periods are consumed by the watermark (no hidden backlog), a policy switch settles
-     * the previous rule first and then baselines the new rule at the current boundary, and the
-     * absolute playtime high-water mark never moves backwards.
+     * <p>Skipped periods are consumed by the watermark (no hidden backlog). A policy switch first
+     * settles the previous rule, then evaluates the new rule only after the previous rule's last
+     * settled cumulative-time boundary. Faster rules can therefore grant newly eligible boundaries
+     * below the current high-water mark without replaying a boundary already settled by the old rule;
+     * the absolute playtime high-water mark never moves backwards.
      */
     public TickResult applyQuotaTick(UUID owner, double observedHours, QuotaRule rule,
                                      Function<String, QuotaRule> ruleLookup) {
@@ -870,8 +873,9 @@ public final class InviteLedgerDao {
                     (long) Math.floor(Math.max(0.0, observedHours) * 60.0 + 1.0e-7));
                 double hours = observedMinutes / 60.0;
 
-                Cursor cursor = new Cursor();
                 String policyKey;
+                Cursor cursor = new Cursor();
+                long settledMinutes = row.settledThroughMinutes;
                 if (row.policyKey == null || row.policyKey.isBlank()) {
                     policyKey = rule.key();
                     cursor.next = row.nextBoundary > 0 ? row.nextBoundary
@@ -881,25 +885,28 @@ public final class InviteLedgerDao {
                     if (previous == null) {
                         previous = rule;
                     }
-                    // 1) settle the previous policy up to the observed hours
                     cursor.next = row.nextBoundary > 0 ? row.nextBoundary : 1;
                     grantLoop(conn, owner, previous, hours, cursor, now);
-                    // 2) baseline the new policy at the current boundary (no retroactive replay)
+                    // Granted and skipped boundaries must survive later policy switches.
+                    settledMinutes = settledThroughMinutes(cursor, previous, settledMinutes);
                     policyKey = rule.key();
-                    cursor.next = InviteQuotaPolicy.firstGrantableBoundary(hours, rule.hoursPerSlot());
+                    cursor.next = InviteQuotaPolicy.firstGrantableBoundary(
+                        settledMinutes / 60.0, rule.hoursPerSlot());
                 } else {
                     policyKey = row.policyKey;
                     cursor.next = row.nextBoundary > 0 ? row.nextBoundary : 1;
                 }
                 grantLoop(conn, owner, rule, hours, cursor, now);
+                settledMinutes = settledThroughMinutes(cursor, rule, settledMinutes);
 
                 try (PreparedStatement stmt = conn.prepareStatement("UPDATE " + t("players")
                         + " SET quota_policy_key = ?, quota_next_boundary = ?,"
-                        + " quota_high_water_minutes = ? WHERE uuid = ?")) {
+                        + " quota_high_water_minutes = ?, quota_settled_through_minutes = ? WHERE uuid = ?")) {
                     stmt.setString(1, policyKey);
                     stmt.setInt(2, cursor.next);
                     stmt.setLong(3, observedMinutes);
-                    stmt.setString(4, owner.toString());
+                    stmt.setLong(4, settledMinutes);
+                    stmt.setString(5, owner.toString());
                     if (stmt.executeUpdate() != 1) {
                         conn.rollback();
                         return TickResult.error();
@@ -942,6 +949,11 @@ public final class InviteLedgerDao {
             index++;
         }
         cursor.next = index;
+    }
+    private long settledThroughMinutes(Cursor cursor, QuotaRule rule, long previousMinutes) {
+        long boundaryMinutes = (long) Math.floor(Math.max(0L, (long) cursor.next - 1L)
+            * rule.hoursPerSlot() * 60.0 + 1.0e-7);
+        return Math.max(previousMinutes, boundaryMinutes);
     }
 
     private String mint(Connection conn, UUID owner, QuotaRule rule, int boundaryIndex,
@@ -1115,11 +1127,13 @@ public final class InviteLedgerDao {
                     : 1;
                 try (PreparedStatement stmt = conn.prepareStatement("UPDATE " + t("players")
                         + " SET quota_policy_key = ?, quota_next_boundary = ?,"
-                        + " quota_high_water_minutes = ?, quota_legacy_migrated = 1 WHERE uuid = ?")) {
+                        + " quota_high_water_minutes = ?, quota_settled_through_minutes = ?,"
+                        + " quota_legacy_migrated = 1 WHERE uuid = ?")) {
                     stmt.setString(1, deferBaseline ? null : rule.key());
                     stmt.setInt(2, next);
                     stmt.setLong(3, observedMinutes);
-                    stmt.setString(4, owner.toString());
+                    stmt.setLong(4, hasLegacy ? observedMinutes : 0L);
+                    stmt.setString(5, owner.toString());
                     stmt.executeUpdate();
                 }
                 int available = syncSlots(conn, owner);
@@ -1225,7 +1239,8 @@ public final class InviteLedgerDao {
         try (Connection conn = connections.open();
              PreparedStatement stmt = conn.prepareStatement("UPDATE " + t("players")
                  + " SET quota_policy_key = NULL, quota_next_boundary = -1,"
-                 + " quota_high_water_minutes = 0, quota_legacy_migrated = 0 WHERE uuid = ?")) {
+                 + " quota_high_water_minutes = 0, quota_settled_through_minutes = 0,"
+                 + " quota_legacy_migrated = 0 WHERE uuid = ?")) {
             stmt.setString(1, owner.toString());
             stmt.executeUpdate();
         } catch (SQLException e) {
@@ -1253,7 +1268,7 @@ public final class InviteLedgerDao {
 
     private PlayerRow lockPlayer(Connection conn, UUID uuid) throws SQLException {
         String sql = "SELECT total_invites, invite_slots, quota_policy_key, quota_next_boundary,"
-            + " quota_high_water_minutes, quota_legacy_migrated, invite_code, personal_code_ready,"
+            + " quota_high_water_minutes, quota_settled_through_minutes, quota_legacy_migrated, invite_code, personal_code_ready,"
             + " quota_periods_granted, bound_invite_code FROM " + t("players")
             + " WHERE uuid = ?" + forUpdate();
         try (PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -1268,6 +1283,7 @@ public final class InviteLedgerDao {
                     rs.getString("quota_policy_key"),
                     rs.getInt("quota_next_boundary"),
                     Math.max(0L, rs.getLong("quota_high_water_minutes")),
+                    Math.max(0L, rs.getLong("quota_settled_through_minutes")),
                     rs.getInt("quota_legacy_migrated") == 1,
                     rs.getString("invite_code"),
                     rs.getBoolean("personal_code_ready"),

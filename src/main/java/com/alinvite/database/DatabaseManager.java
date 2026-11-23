@@ -257,6 +257,7 @@ public class DatabaseManager {
                 `quota_policy_key` VARCHAR(64),
                 `quota_next_boundary` INT NOT NULL DEFAULT -1,
                 `quota_high_water_minutes` BIGINT NOT NULL DEFAULT 0,
+                `quota_settled_through_minutes` BIGINT NOT NULL DEFAULT 0,
                 `quota_legacy_migrated` INT NOT NULL DEFAULT 0
             )
             """;

@@ -34,8 +34,8 @@ public record QuotaRule(String group, InviteQuotaPolicy.Mode mode,
 
     /**
      * Stable policy identity persisted in the ledger. The interval and mode are part of the key so
-     * that changing either one is treated as a policy switch: the previous policy is settled first
-     * and the new one is baselined at the player's current boundary (no retroactive replay).
+     * that changing either one is treated as a policy switch: the previous rule is settled first,
+     * then the new rule begins after the previous rule's last settled cumulative-time boundary.
      */
     public String key() {
         return group + "@" + String.format(Locale.ROOT, "%.2f", hoursPerSlot) + ":" + mode.name();

@@ -181,7 +181,8 @@ public final class AtomicInviteLedger {
                     contribution_amount = 0, total_rebate_amount = 0, total_rebate_points = 0,
                     bind_ip = NULL, unclaimed_rebate = 0, milestone_enabled = 1, rebate_enabled = 1,
                     gift_enabled = 1, quota_policy_key = NULL, quota_max_codes = -1, quota_next_boundary = -1,
-                    quota_high_water_minutes = 0, quota_legacy_migrated = 0, last_permission_group = NULL
+                    quota_high_water_minutes = 0, quota_settled_through_minutes = 0,
+                    quota_legacy_migrated = 0, last_permission_group = NULL
                 WHERE uuid = ?
                 """.formatted(t("players")), owner);
             return inviter;
