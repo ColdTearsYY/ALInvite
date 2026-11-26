@@ -924,10 +924,8 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
 
         // givedj 命令补全
         if (args.length == 2 && args[0].equalsIgnoreCase("givedj")) {
-            return filterByInput(
-                Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()),
-                args[1]
-            );
+            return plugin.getPointsRebateManager() == null ? List.of()
+                : plugin.getPointsRebateManager().completePlayerNames(args[1]);
         }
 
         // papi 子命令补全

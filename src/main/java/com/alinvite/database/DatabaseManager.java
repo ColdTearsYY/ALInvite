@@ -80,6 +80,7 @@ public class DatabaseManager {
     private com.alinvite.database.delivery.DeliveryDao deliveryDao;
     private volatile com.alinvite.manager.BindingDeliveryPlan deliveryPlan;
     private com.alinvite.database.ledger.AtomicInviteLedger atomicLedger;
+    private PlayerNameDirectory playerNameDirectory;
     public com.alinvite.database.ledger.AtomicInviteLedger getAtomicLedger() { return atomicLedger; }
 
     public com.alinvite.database.delivery.DeliveryDao getDeliveryDao() { return deliveryDao; }
@@ -151,6 +152,8 @@ public class DatabaseManager {
             try {
                 createTables();
                 this.playtimeDao = new PlaytimeDao(this::getConnection, tablePrefix, mysql);
+                this.playerNameDirectory = new PlayerNameDirectory(this::getConnection, tablePrefix, mysql);
+                this.playerNameDirectory.ensureSchema();
                 this.deliveryDao = new com.alinvite.database.delivery.DeliveryDao(this::getConnection, tablePrefix, mysql);
                 playtimeDao.ensureSchema();
                 deliveryDao.ensureSchema();
@@ -473,6 +476,45 @@ public class DatabaseManager {
             plugin.getLogger().severe("查询绑定玩家名字目录失败: " + e.getMessage());
         }
         return null;
+    }
+    public CompletableFuture<Void> upsertPlayerName(UUID uuid, String name) {
+        return AsyncPool.run(() -> {
+            try { playerNameDirectory.upsert(uuid, name); }
+            catch (SQLException e) { plugin.getLogger().warning("记录网络玩家名称失败: " + e.getMessage()); }
+        });
+    }
+
+    public CompletableFuture<UUID> findNetworkPlayerUuid(String name) {
+        return AsyncPool.supply(() -> {
+            try {
+                PlayerNameDirectory.PlayerIdentity identity = playerNameDirectory.find(name);
+                return identity == null ? null : identity.uuid();
+            } catch (SQLException e) {
+                plugin.getLogger().warning("查询网络玩家 UUID 失败: " + e.getMessage());
+                return null;
+            }
+        });
+    }
+
+    public CompletableFuture<PlayerNameDirectory.PlayerIdentity> findNetworkPlayer(String name) {
+        return AsyncPool.supply(() -> {
+            try { return playerNameDirectory.find(name); }
+            catch (SQLException e) { plugin.getLogger().warning("查询网络玩家目录失败: " + e.getMessage()); return null; }
+        });
+    }
+
+    public CompletableFuture<Void> upsertNetworkPlayers(List<PlayerNameDirectory.PlayerIdentity> players) {
+        return AsyncPool.run(() -> {
+            try { playerNameDirectory.upsertAll(players); }
+            catch (SQLException e) { plugin.getLogger().warning("导入 LuckPerms 玩家目录失败: " + e.getMessage()); }
+        });
+    }
+
+    public CompletableFuture<List<String>> getKnownPlayerNames() {
+        return AsyncPool.supply(() -> {
+            try { return playerNameDirectory.listNames(); }
+            catch (SQLException e) { plugin.getLogger().warning("读取网络玩家名称目录失败: " + e.getMessage()); return List.of(); }
+        });
     }
 
     public String findBoundDisplayNameSync(UUID uuid) {

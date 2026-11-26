@@ -9,6 +9,8 @@ import org.bukkit.entity.Player;
 
 import java.util.Locale;
 import java.util.UUID;
+import com.alinvite.database.PlayerNameDirectory;
+import com.alinvite.utils.LuckPermsPlayerDirectory;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -20,13 +22,67 @@ public class PointsRebateManager {
 
     private final ALInvite plugin;
     private final DatabaseManager database;
-
+    private volatile java.util.List<String> knownPlayerNames = java.util.List.of();
+    private final java.util.concurrent.atomic.AtomicBoolean refreshingNames = new java.util.concurrent.atomic.AtomicBoolean();
+    private final boolean luckPermsAvailable;
+    private final java.util.concurrent.atomic.AtomicLong lastLuckPermsRefresh = new java.util.concurrent.atomic.AtomicLong();
 
     public PointsRebateManager(ALInvite plugin) {
         this.plugin = plugin;
         this.database = plugin.getDatabaseManager();
+        this.luckPermsAvailable = Bukkit.getPluginManager().isPluginEnabled("LuckPerms");
+        refreshKnownPlayerNames();
+        plugin.getScheduler().runAsyncTimer(this::refreshKnownPlayerNames, 2400L, 2400L);
     }
 
+    public void recordPlayer(Player player) {
+        if (player == null) return;
+        String name = player.getName();
+        knownPlayerNames = mergeNames(knownPlayerNames, java.util.List.of(name));
+        database.upsertPlayerName(player.getUniqueId(), name);
+    }
+
+    public java.util.List<String> completePlayerNames(String prefix) {
+        java.util.ArrayList<String> sources = new java.util.ArrayList<>(knownPlayerNames);
+        for (Player online : Bukkit.getOnlinePlayers()) sources.add(online.getName());
+        return com.alinvite.utils.PlayerNameSuggestions.complete(sources, prefix);
+    }
+
+    private void refreshKnownPlayerNames() {
+        if (!refreshingNames.compareAndSet(false, true)) return;
+        database.getKnownPlayerNames().thenCompose(names -> {
+            knownPlayerNames = names == null ? java.util.List.of() : names;
+            long now = System.currentTimeMillis();
+            long previous = lastLuckPermsRefresh.get();
+            boolean importLuckPerms = luckPermsAvailable
+                && now - previous >= java.util.concurrent.TimeUnit.HOURS.toMillis(1)
+                && lastLuckPermsRefresh.compareAndSet(previous, now);
+            if (!importLuckPerms) return CompletableFuture.completedFuture(names);
+            return LuckPermsPlayerDirectory.loadKnownUsers()
+                .thenCompose(players -> database.upsertNetworkPlayers(players)
+                    .thenApply(ignored -> {
+                        java.util.List<String> lpNames = players.stream()
+                            .map(PlayerNameDirectory.PlayerIdentity::currentName).toList();
+                        knownPlayerNames = mergeNames(names, lpNames);
+                        return knownPlayerNames;
+                    }))
+                .exceptionally(error -> {
+                    plugin.getLogger().warning("从 LuckPerms 刷新全服玩家补全失败: " + error.getMessage());
+                    return knownPlayerNames;
+                });
+        }).whenComplete((names, error) -> {
+            if (error != null) plugin.getLogger().warning("刷新全服玩家名称目录失败: " + error.getMessage());
+            else if (names != null) knownPlayerNames = names;
+            refreshingNames.set(false);
+        });
+    }
+
+    private static java.util.List<String> mergeNames(java.util.List<String> first, java.util.List<String> second) {
+        java.util.LinkedHashMap<String, String> merged = new java.util.LinkedHashMap<>();
+        if (first != null) first.forEach(name -> { if (name != null && !name.isBlank()) merged.put(name.toLowerCase(Locale.ROOT), name); });
+        if (second != null) second.forEach(name -> { if (name != null && !name.isBlank()) merged.put(name.toLowerCase(Locale.ROOT), name); });
+        return java.util.List.copyOf(merged.values());
+    }
     /**
      * 处理充值返点：参数验证 → 防重复检查 → 点券发放 → 返点处理。
      *
@@ -43,39 +99,8 @@ public class PointsRebateManager {
      * 跨服/重复推送同一事件只会发放一次返利。
      */
     public CompletableFuture<Boolean> processRecharge(String operator, String targetPlayer, double amount, boolean skipRebate, String transactionKey) {
-        return validateParameters(targetPlayer, amount)
-            .thenCompose(valid -> {
-                if (!valid) {
-                    return CompletableFuture.completedFuture(false);
-                }
-                return checkAntiDuplicate(targetPlayer, amount);
-            })
-            .thenCompose(ok -> {
-                if (!ok) {
-                    plugin.getLogger().warning("防重复检查失败，可能是重复交易: " + targetPlayer);
-                    return CompletableFuture.completedFuture(false);
-                }
-                return executePointsCommand(targetPlayer, amount);
-            })
-            .thenCompose(given -> {
-                if (!given) {
-                    return CompletableFuture.completedFuture(false);
-                }
-                if (skipRebate) {
-                    return CompletableFuture.completedFuture(true);
-                }
-                return processRebate(targetPlayer, amount, transactionKey);
-            })
-            .exceptionally(throwable -> {
-                plugin.getLogger().severe("处理充值返点失败: " + throwable.getMessage());
-                return false;
-            });
-    }
-
-    private CompletableFuture<Boolean> validateParameters(String playerName, double amount) {
-        Player target = Bukkit.getPlayer(playerName);
-        if (target == null) {
-            plugin.getLogger().warning("玩家不存在: " + playerName);
+        if (targetPlayer == null || targetPlayer.isBlank() || !Double.isFinite(amount) || amount <= 0) {
+            plugin.getLogger().warning("充值参数无效: player=" + targetPlayer + ", amount=" + amount);
             return CompletableFuture.completedFuture(false);
         }
         double minAmount = plugin.getConfigManager().getConfig()
@@ -84,34 +109,62 @@ public class PointsRebateManager {
             plugin.getLogger().warning("充值金额过小: " + amount);
             return CompletableFuture.completedFuture(false);
         }
-        return CompletableFuture.completedFuture(true);
+        String key = transactionKey == null || transactionKey.isBlank()
+            ? "evt_" + UUID.randomUUID() : transactionKey;
+        return resolveTarget(targetPlayer).thenCompose(target -> {
+            if (target == null) {
+                plugin.getLogger().warning("玩家不存在于 LuckPerms/共享玩家目录: " + targetPlayer);
+                return CompletableFuture.completedFuture(false);
+            }
+            return checkAntiDuplicate(targetPlayer, key).thenCompose(allowed -> {
+                if (!allowed) return CompletableFuture.completedFuture(false);
+                return executePointsCommand(target.currentName(), amount).thenCompose(given -> {
+                    if (!given || skipRebate) return CompletableFuture.completedFuture(given);
+                    return processRebate(target.uuid(), target.currentName(), amount, key);
+                });
+            });
+        }).exceptionally(error -> {
+            plugin.getLogger().severe("处理充值返点失败: " + rootMessage(error));
+            return false;
+        });
     }
 
-    /**
-     * 防重复检查（跨服）。
-     * TODO（行为变更待确认）：写入路径（addPointsRebateRecord/markProcessed）当前无调用方，
-     * 检查恒不命中；且 key=uuid+金额，启用后同日同金额两笔会被误判。
-     * 激活前需补全写入并改用订单号/时间窗 key。
-     */
-    private CompletableFuture<Boolean> checkAntiDuplicate(String playerName, double amount) {
-        UUID playerUuid = getPlayerUuid(playerName);
-        if (playerUuid == null) {
-            return CompletableFuture.completedFuture(false);
-        }
-        boolean antiDuplicateEnabled = plugin.getConfigManager().getConfig()
-            .getBoolean("points_rebate.anti_duplicate.enabled", true);
-        if (!antiDuplicateEnabled) {
-            return CompletableFuture.completedFuture(true);
-        }
-        String transactionKey = generateTransactionKey(playerUuid, amount);
-        return database.checkCrossServerDuplicate(transactionKey)
-            .thenApply(isDuplicate -> {
-                if (isDuplicate) {
-                    plugin.getLogger().warning("跨服防重复：检测到重复充值，玩家=" + playerName + ", 金额=" + amount);
-                    return false;
-                }
-                return true;
+    public record ResolvedTarget(UUID uuid, String currentName) { }
+
+    private CompletableFuture<ResolvedTarget> resolveTarget(String name) {
+        Player online = Bukkit.getPlayerExact(name);
+        if (online != null) return CompletableFuture.completedFuture(new ResolvedTarget(online.getUniqueId(), online.getName()));
+
+        return database.findNetworkPlayer(name).thenCompose(indexed -> {
+            if (indexed != null) return CompletableFuture.completedFuture(new ResolvedTarget(indexed.uuid(), indexed.currentName()));
+            if (!Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return LuckPermsPlayerDirectory.lookupUniqueId(name).thenCompose(uuid -> {
+                if (uuid == null) return CompletableFuture.completedFuture(null);
+                return LuckPermsPlayerDirectory.lookupUsername(uuid).thenApply(currentName -> {
+                    String canonical = currentName == null || currentName.isBlank() ? name : currentName;
+                    database.upsertPlayerName(uuid, canonical);
+                    return new ResolvedTarget(uuid, canonical);
+                });
             });
+        });
+    }
+
+    private static String rootMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null) current = current.getCause();
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    }
+
+    private CompletableFuture<Boolean> checkAntiDuplicate(String playerName, String transactionKey) {
+        boolean enabled = plugin.getConfigManager().getConfig()
+            .getBoolean("points_rebate.anti_duplicate.enabled", true);
+        if (!enabled) return CompletableFuture.completedFuture(true);
+        return database.checkCrossServerDuplicate(transactionKey).thenApply(duplicate -> {
+            if (duplicate) plugin.getLogger().warning("跨服防重复：检测到相同充值流水，玩家=" + playerName + ", key=" + transactionKey);
+            return !duplicate;
+        });
     }
 
     /** 在全局线程执行点券发放命令，回调带回结果（不阻塞调用线程）。 */
@@ -139,12 +192,7 @@ public class PointsRebateManager {
         return future;
     }
 
-    private CompletableFuture<Boolean> processRebate(String targetPlayer, double amount, String transactionKey) {
-        UUID targetUuid = getPlayerUuid(targetPlayer);
-        if (targetUuid == null) {
-            plugin.getLogger().warning("无法获取玩家UUID: " + targetPlayer);
-            return CompletableFuture.completedFuture(false);
-        }
+    private CompletableFuture<Boolean> processRebate(UUID targetUuid, String targetPlayer, double amount, String transactionKey) {
 
         return AsyncPool.supply(() -> database.getInviterSync(targetUuid))
             .thenCompose(inviterUuid -> {
@@ -202,12 +250,10 @@ public class PointsRebateManager {
                                                 .thenCompose(success -> {
                                                     // 事件流水（可追溯，也是窗口期判重依据）
                                                     if (success) {
-                                                        UUID sourceUuid = getPlayerUuid(targetPlayer);
-                                                        if (sourceUuid != null) {
-                                                            AsyncPool.run(() -> database.insertRebateEventSync(
-                                                                inviterUuid, sourceUuid, amount, rebateAmount, targetPlayer));
+                                                        database.upsertPlayerName(targetUuid, targetPlayer);
+                                                        AsyncPool.run(() -> database.insertRebateEventSync(
+                                                            inviterUuid, targetUuid, amount, rebateAmount, targetPlayer));
                                                         }
-                                                    }
                                                     return database.markPointsRebateRecordProcessed(transactionKey)
                                                         .thenApply(v -> success);
                                                 });
@@ -367,18 +413,5 @@ public class PointsRebateManager {
             : String.format(Locale.ROOT, "%.2f", amount);
     }
 
-    /**
-     * 跨服交易标识。
-     * TODO（行为变更待确认）：当前为 uuid+金额，激活防重复前应改为订单号或加时间窗，
-     * 否则同日同金额两笔充值会被误判为重复。
-     */
-    private String generateTransactionKey(UUID playerUuid, double amount) {
-        return String.format(Locale.ROOT, "rebate_%s_%.2f", playerUuid, amount);
-    }
-
-    private UUID getPlayerUuid(String playerName) {
-        Player player = Bukkit.getPlayer(playerName);
-        return player != null ? player.getUniqueId() : null;
-    }
 
 }

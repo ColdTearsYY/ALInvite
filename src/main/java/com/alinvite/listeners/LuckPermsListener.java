@@ -50,11 +50,11 @@ public class LuckPermsListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        if (!luckPermsEnabled) {
-            return;
-        }
-
         Player player = event.getPlayer();
+        if (plugin.getPointsRebateManager() != null) {
+            plugin.getPointsRebateManager().recordPlayer(player);
+        }
+        if (!luckPermsEnabled) return;
         plugin.getScheduler().runAtPlayerDelayed(player, () ->
             rewardListener.checkOnlinePlayerPermissionGroup(player), 5L);
     }

@@ -4,7 +4,7 @@
 
 **ALInvite** 是一个功能强大的我的世界服务器邀请系统插件，旨在通过激励玩家邀请新玩家加入服务器，促进服务器人口增长和社区活跃度。插件支持多语言、自定义菜单、礼包商店、里程碑奖励等丰富功能，完全兼容 Folia 多线程服务器。
 
-当前版本为 [v2.2.5](https://github.com/ColdTearsYY/ALInvite/releases/tag/v2.2.5)。自动老玩家资格门槛与邀请码发放配额是独立规则：达到 24 小时自动老玩家门槛不会提前解锁普通组邀请码；默认普通组按 48 小时发码。升组时按已结算水位处理新组节点，详见[更新记录](CHANGELOG.md)。
+当前版本为 [v2.2.6](https://github.com/ColdTearsYY/ALInvite/releases/tag/v2.2.6)。`/travel givedj` 可通过精确名称查询当前后端在线玩家、共享玩家目录或 LuckPerms 离线用户；目标跨后端时，PlayerPoints 命令及其点券存储也必须支持该玩家名和共享账户。升组配额与在线资格为独立规则，详见[更新记录](CHANGELOG.md)。
 
 主命令改为 `/travel`，原有名称继续兼容。已有自定义语言和菜单中的旧命令提示会在显示时转换。更换 JAR 后须重启服务端才能注册新命令。其他版本变更见[更新记录](CHANGELOG.md)。
 
@@ -277,7 +277,7 @@ main_menu:
 | `/alinvite admin open <数量>` | `alinvite.admin` | 生成指定数量的隐藏注册码并开放注册 |
 | `/alinvite admin close` | `alinvite.admin` | 关闭开放注册并作废未使用注册码 |
 | `/alinvite admin announce`            | `alinvite.admin` | 发送全服公告       |
-| `/alinvite givedj <玩家> <金额>`          | `alinvite.admin` | 给玩家充值点券并处理返点 |
+| `/alinvite givedj <玩家> <金额> [-norebate]` | `alinvite.admin` | 为精确匹配的在线/已知离线玩家执行配置的点券命令；跨后端点券发放需 PlayerPoints/存储支持 |
 
 #### 贡献返点管理命令
 
